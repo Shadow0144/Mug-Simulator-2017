@@ -27,16 +27,18 @@ namespace cpd
 void construct_affinity_matrix(const arma::mat& X, const arma::mat& Y,
                                float beta, arma::mat& G)
 {
+    arma::mat Xr = X.cols(0, 2);
+    arma::mat Yr = Y.cols(0, 2);
     double k = -2 * std::pow(beta, 2);
-    const arma::uword N = X.n_rows;
-    const arma::uword M = Y.n_rows;
-    const arma::uword D = Y.n_cols;
+    const arma::uword N = Xr.n_rows;
+    const arma::uword M = Yr.n_rows;
+    const arma::uword D = Yr.n_cols;
 
     G.set_size(N, M);
 
     for (arma::uword i = 0; i < M; ++i)
     {
-        G.col(i) = arma::exp(arma::sum(arma::pow(X - arma::repmat(Y.row(i), N, 1), 2),
+        G.col(i) = arma::exp(arma::sum(arma::pow(Xr - arma::repmat(Yr.row(i), N, 1), 2),
                                        1) / k);
     }
 

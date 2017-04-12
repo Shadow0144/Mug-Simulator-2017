@@ -54,7 +54,8 @@ Registration::ResultPtr Nonrigid::execute(const arma::mat& X,
     double L = 0;
 
     arma::mat G;
-    construct_affinity_matrix(Y, Y, get_beta(), G);
+    arma::mat Yr = Y.cols(0, 2);
+    construct_affinity_matrix(Yr, Yr, get_beta(), G);
 
     double L_old, Np;
     arma::vec P1(M), Pt1(M);

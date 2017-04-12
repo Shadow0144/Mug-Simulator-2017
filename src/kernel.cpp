@@ -82,6 +82,11 @@ void Compound_Kernel::setParam(int index, double param)
     _kernels[i]->setParam(index, param);
 }
 
+int Compound_Kernel::numParameters()
+{
+    return -1;
+}
+
 std::vector<Kernel::Ptr> Compound_Kernel::getKernels() const
 {
     return _kernels;
@@ -172,6 +177,11 @@ void RBF_Kernel::setParam(int index, double param)
     _params[index] = param;
 }
 
+int RBF_Kernel::numParameters()
+{
+    return 3;
+}
+
 arma::mat RBF_Kernel::gradientP(const arma::mat X, int index) const
 {
     arma::mat g(X.n_rows, X.n_rows);
@@ -187,7 +197,7 @@ arma::mat RBF_Kernel::gradientP(const arma::mat X, int index) const
                 g(m, n) = std::exp(-0.5 * _params[2] * XSq(0, 0));
                 break;
             case 1:
-                g(m, n) = ((m == n) ? 1 : 0);
+                g(m, n) = ((m == n) ? 1.0 : 0.0);
                 break;
             case 2:
                 g(m, n) = -0.5 * _params[0] * XSq(0, 0) * std::exp(-0.5 * _params[2] * XSq(0, 0));
@@ -240,7 +250,7 @@ arma::mat RBF_Kernel::kernalize(const arma::mat X1, const arma::mat X2) const
         {
             arma::mat diff = X1.row(i) - X2.row(j);
             diff = diff * diff.t();
-            K(i, j) = _params[0] * std::exp(-0.5 * _params[2] * diff(0, 0)) + ((i ==j) ? _params[1] : 0.0);
+            K(i, j) = _params[0] * std::exp(-0.5 * _params[2] * diff(0, 0)) + ((i == j) ? _params[1] : 0.0);
         }
     }
     return K;
@@ -292,6 +302,11 @@ double Linear_Kernel::getParam(int index)
 void Linear_Kernel::setParam(int index, double param)
 {
     _params[index] = param;
+}
+
+int Linear_Kernel::numParameters()
+{
+    return 1;
 }
 
 arma::mat Linear_Kernel::gradientP(const arma::mat X, int) const

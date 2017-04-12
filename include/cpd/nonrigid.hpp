@@ -19,16 +19,55 @@
 
 #pragma once
 
-#include <armadillo>
+#include <cpd/registration.hpp>
 
 
 namespace cpd
 {
 
 
-void find_affinity_eigenvectors(const arma::mat& Y, const float beta,
-                                const arma::uword numeig,
-                                const float epsilon, arma::mat& Q, arma::mat& S);
+class Nonrigid : public Registration
+{
+public:
+
+    explicit Nonrigid(
+        float tol = DefaultTolerance,
+        int max_it = DefaultMaxIterations,
+        float outliers = DefaultOutliers,
+        bool use_fgt = DefaultFgt,
+        float epsilon = DefaultEpsilon,
+        float beta = DefaultBeta,
+        float lambda =  DefaultLambda
+    );
+
+    inline float get_beta() const
+    {
+        return m_beta;
+    }
+    inline float get_lambda() const
+    {
+        return m_lambda;
+    }
+
+    inline void set_beta(float beta)
+    {
+        m_beta = beta;
+    }
+    inline void set_lambda(float lambda)
+    {
+        m_lambda = lambda;
+    }
+
+    virtual ~Nonrigid() {};
+
+private:
+
+    virtual ResultPtr execute(const arma::mat& X, const arma::mat& Y,
+                              double sigma2) const;
+
+    float m_beta;
+    float m_lambda;
+};
 
 
 }

@@ -110,7 +110,9 @@ double Registration::find_P(
     arma::mat& PX
 ) const
 {
-    return cpd::find_P(X, Y, sigma2, get_outliers(), P1, Pt1, PX, use_fgt(),
+    arma::mat Xr = X.cols(0, 2);
+    arma::mat Yr = Y.cols(0, 2);
+    return cpd::find_P(Xr, Yr, sigma2, get_outliers(), P1, Pt1, PX, use_fgt(),
                        get_epsilon());
 }
 

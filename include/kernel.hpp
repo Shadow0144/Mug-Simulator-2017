@@ -19,6 +19,8 @@ public:
     virtual double getParam(int index) = 0;
     virtual void setParam(int index, double param) = 0;
 
+    //virtual static int numParams() const = 0;
+
     virtual arma::mat gradientP(const arma::mat X, int index) const = 0;
     virtual arma::mat gradientX(const arma::mat X, int i, int j) const = 0;
 
@@ -43,7 +45,9 @@ public:
     double getParam(int index);
     void setParam(int index, double param);
 
-	std::vector<Kernel::Ptr> getKernels() const;
+    static int numParameters();
+
+    std::vector<Kernel::Ptr> getKernels() const;
 
     arma::mat gradientP(const arma::mat X, int index) const;
     arma::mat gradientX(const arma::mat X, int i, int j) const;
@@ -58,17 +62,19 @@ private:
 class RBF_Kernel : public Kernel
 {
 public:
-    RBF_Kernel(double alpha = 1.0, double beta = 0.0, double gamma = 0.1);
+    RBF_Kernel(double alpha = 1.0, double beta = 0.1, double gamma = 0.1);
     RBF_Kernel(const RBF_Kernel& kernel);
     ~RBF_Kernel();
 
     typedef std::shared_ptr<RBF_Kernel> Ptr;
-    static Ptr New(double alpha = 1.0, double beta = 0.0, double gamma = 0.1);
+    static Ptr New(double alpha = 1.0, double beta = 0.1, double gamma = 0.1);
     Kernel::Ptr clone();
 
     int numParams() const;
     double getParam(int index);
     void setParam(int index, double param);
+
+    static int numParameters();
 
     arma::mat gradientP(const arma::mat X, int index) const;
     arma::mat gradientX(const arma::mat X, int i, int j) const;
@@ -93,6 +99,8 @@ public:
     int numParams() const;
     double getParam(int index);
     void setParam(int index, double param);
+
+    static int numParameters();
 
     arma::mat gradientP(const arma::mat X, int index) const;
     arma::mat gradientX(const arma::mat X, int i, int j) const;

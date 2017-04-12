@@ -95,7 +95,7 @@ bool dense = false;
 
 int numParams = 4;
 
-const double normalCount = 100.0;
+const double normalCount = 50.0;
 
 const double rotationScaleFactor = 100.0;
 
@@ -2259,7 +2259,6 @@ int main()
     google::InitGoogleLogging("cpd_vtk");
     Compound_Kernel::Ptr kernel = Compound_Kernel::New();
     kernel->addKernel(RBF_Kernel::New());
-    //kernel->addKernel(Linear_Kernel::New());
     gplvm = GPLVM::New(Wc, numParams, kernel);
     gplvm->learn();
 
