@@ -57,4 +57,4 @@ private:
     arma::mat _LY;
 };
 
-#endif
+#endif // GPLVM_HPP

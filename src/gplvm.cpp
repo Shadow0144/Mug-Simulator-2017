@@ -36,22 +36,22 @@ bool GPLVMCostFunctor::Evaluate(const double* parameters, double* cost, double* 
         arma::mat dK = (alpha * alpha.t() - _p*invK);
 
         // Gradient w.r.t. kernel parameters
-        arma::mat kp = _kernel->gradientP(X);
-        arma::mat gK = dK * kp;
-        int start = _kernel->numParams();
-        for (int i = 0; i < start; i++)
+        int XStart = _kernel->numParams();
+        for (int i = 0; i < XStart; i++)
         {
-            gradient[i] = gK(i, 0);
+            arma::mat kp = _kernel->gradientP(X, i);
+            arma::mat gK = dK * kp;
+            gradient[i] = arma::accu(gK);
         }
 
         // Gradient w.r.t. X
-        for (int i = 0; i < _n; i++)
+        for (int j = 0; j < _q; j++)
         {
-            for (int j = 0; j < _q; j++)
+            for (int i = 0; i < _n; i++)
             {
                 arma::mat kg = _kernel->gradientX(X, i, j);
                 arma::mat gX = dK * kg;
-                gradient[start + i*_q + j] = gX(i, j);
+                gradient[XStart + j*_n + i] = arma::accu(gX);
             }
         }
     }

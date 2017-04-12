@@ -84,17 +84,20 @@ VTK_MODULE_INIT(vtkInteractionStyle)
 #include <vtkSimplePointsReader.h>
 
 #include "gplvm.hpp"
+#include "quaternion.hpp"
 
-int meshCount = 4;
+int meshCount = 7;
 int currentMesh = 0;
 const int templateNum = 2;
 const int startNum = 1;
 
 bool dense = false;
 
-int numParams = 2;
+int numParams = 4;
 
 const double normalCount = 100.0;
+
+const double rotationScaleFactor = 100.0;
 
 const double points = 35.0;
 
@@ -167,6 +170,8 @@ const int modelValueText = 13;
 const int modelTypeText = 14;
 const int XSetText = 15;
 //const int pointSetText = 16;
+const int axesText = 17;
+const int normalsText = 18;
 
 arma::mat _T; // Template
 arma::mat _Tm; // Template mesh
@@ -216,6 +221,8 @@ bool displayingMesh = true;
 
 int currentParam;
 
+arma::vec base;
+
 const double beta_k = -2 * std::pow(1, 2); // beta = 1
 
 GPLVM::Ptr gplvm;
@@ -227,10 +234,13 @@ arma::mat ComputeG(arma::mat base, arma::mat obs)
 
 	arma::mat Gr(N, M);
 
+    arma::mat basePrime = base.cols(0, 2);
+    arma::mat obsPrime = obs.cols(0, 2);
+
 	for (arma::uword i = 0; i < M; ++i)
 	{
-		arma::mat Tz = arma::repmat(base.row(i), N, 1);
-		Gr.col(i) = arma::exp(arma::sum(arma::pow(obs - Tz, 2), 1) / beta_k);
+        arma::mat Tz = arma::repmat(basePrime.row(i), N, 1);
+        Gr.col(i) = arma::exp(arma::sum(arma::pow(obsPrime - Tz, 2), 1) / beta_k);
 	}
 
 	return Gr;
@@ -387,7 +397,7 @@ void updateArrows()
 	//  Create the vector field
 	const float start = -1;
 	const float step = 2.0/R;
-	arma::mat Z(R * R * R, 3);
+    arma::mat Z(R * R * R, 7);
 	int index = 0;
 	for (int i = 0; i < R; i++)
 	{
@@ -398,6 +408,10 @@ void updateArrows()
 				Z(index, 0) = i * step + start;
 				Z(index, 1) = j * step + start;
 				Z(index, 2) = k * step + start;
+                Z(index, 3) = 0.0;
+                Z(index, 4) = 0.0;
+                Z(index, 5) = 1.0;
+                Z(index, 6) = 1.0;
 				index++;
 			}
 		}
@@ -1149,6 +1163,8 @@ public:
                 if (b) renderer->AddActor(observedAxes[currentMesh]);
                 if (g) renderer->AddActor(deformedAxes);
                 if (r) renderer->AddActor(templateAxes);
+                legend->SetEntryColor(axesText, white);
+                legend->Modified();
 				arrowsNeedUpdate = true;
             }
             else
@@ -1156,6 +1172,8 @@ public:
                 if (b) renderer->RemoveActor(observedAxes[currentMesh]);
                 if (g) renderer->RemoveActor(deformedAxes);
                 if (r) renderer->RemoveActor(templateAxes);
+                legend->SetEntryColor(axesText, grey);
+                legend->Modified();
             }
             changed = true;
         }
@@ -1213,6 +1231,8 @@ public:
                     }
                 }
                 else { }
+                legend->SetEntryColor(normalsText, white);
+                legend->Modified();
             }
             else
             {
@@ -1265,6 +1285,8 @@ public:
                     }
                 }
                 else { }
+                legend->SetEntryColor(normalsText, grey);
+                legend->Modified();
             }
             changed = true;
         }
@@ -1277,7 +1299,7 @@ public:
                 _W = _X * _V;
                 _W = _W + _Wm;
                 _W = _W.t();
-                _W.reshape(3, _M);
+                _W.reshape(7, _M);
                 _W = _W.t();
             }
             else
@@ -1295,22 +1317,44 @@ public:
             }
 
 			_GW = _G * _W;
-			for (int i = 0; i < _GW.n_rows; i++)
+
+            vtkSmartPointer<vtkFloatArray> templateMeshNormalsRetrieved =
+                vtkFloatArray::SafeDownCast(templateMesh->GetPointData()->GetNormals());
+            vtkSmartPointer<vtkFloatArray> deformedMeshNormalsRetrieved =
+                vtkSmartPointer<vtkFloatArray>::New();
+            deformedMeshNormalsRetrieved->SetNumberOfComponents(3);
+            deformedMeshNormalsRetrieved->SetNumberOfTuples(templateMeshNormalsRetrieved->GetNumberOfTuples());
+            arma::vec normal(3);
+            for (int i = 0; i < _GW.n_rows; i++)
 			{
-				double* dM = deformedMesh->GetPoint(i);
+                double dM[3];
+                double dMN[3];
 				double* tM = templateMesh->GetPoint(i);
+                double tMN[3];
+                templateMeshNormalsRetrieved->GetTuple(i, tMN);
+
 				dM[0] = tM[0] + (interpolation * _GW(i, 0));
 				dM[1] = tM[1] + (interpolation * _GW(i, 1));
 				dM[2] = tM[2] + (interpolation * _GW(i, 2));
 				deformedMesh->GetPoints()->SetPoint(i, dM);
+
+                normal(0) = tMN[0];
+                normal(1) = tMN[1];
+                normal(2) = tMN[2];
+                Quaternion rot((interpolation * _GW(i, 3)), (interpolation * _GW(i, 4)),
+                               (interpolation * _GW(i, 5)), (interpolation * _GW(i, 6)));
+                arma::vec rotPoint = rot.transformPoint(normal);
+                dMN[0] = rotPoint(0);
+                dMN[1] = rotPoint(1);
+                dMN[2] = rotPoint(2);
+                deformedMeshNormalsRetrieved->SetTuple3(i, dMN[0], dMN[1], dMN[2]);
 			}
+            deformedMesh->GetPointData()->SetNormals(deformedMeshNormalsRetrieved);
 
             double pN[3];
             double nV[3];
             double startPoint[3];
             double endPoint[3];
-            vtkSmartPointer<vtkFloatArray> deformedMeshNormalsRetrieved =
-                vtkFloatArray::SafeDownCast(deformedMesh->GetPointData()->GetNormals());
             int count = deformedMeshNormalsRetrieved->GetNumberOfTuples();
             double jump = std::max(1.0, ((double)count)/normalCount);
             int index = 0;
@@ -1332,6 +1376,7 @@ public:
             t->Translate(templateAxesPosition[0] + (interpolation * GaW(0, 0)),
                          templateAxesPosition[1] + (interpolation * GaW(0, 1)),
                          templateAxesPosition[2] + (interpolation * GaW(0, 2)));
+            /// TODO
             deformedAxes->SetUserTransform(t);
 
 			deformedMesh->Modified();
@@ -1462,7 +1507,7 @@ void printResults(arma::mat& W, std::string filename)
 void addLabels()
 {
 	legend = vtkSmartPointer<vtkLegendBoxActor>::New();
-    legend->SetNumberOfEntries(17);
+    legend->SetNumberOfEntries(19);
 
 	vtkSmartPointer<vtkCubeSource> legendBox =
 			vtkSmartPointer<vtkCubeSource>::New();
@@ -1489,7 +1534,8 @@ void addLabels()
 	legend->SetEntry(14, legendBox->GetOutput(), "l - Model: Non-Linear", white);
 	legend->SetEntry(15, legendBox->GetOutput(), "x - X: Mean", white);
 	legend->SetEntry(16, legendBox->GetOutput(), "p - Switch: Mesh <-> Points", white);
-    legend->SetEntry(17, legendBox->GetOutput(), "s - Axes", white);
+    legend->SetEntry(17, legendBox->GetOutput(), "s - Axes", grey);
+    legend->SetEntry(18, legendBox->GetOutput(), "n - Normals", grey);
 
 	legend->GetPositionCoordinate()->SetCoordinateSystemToView();
 	legend->GetPosition2Coordinate()->SetCoordinateSystemToView();
@@ -1581,7 +1627,7 @@ void addField()
     //  Create the vector field
     const float start = -1.0;
     const float step = 2.0/(R-1.0);
-	arma::mat Z(R * R * R, 3);
+    arma::mat Z(R * R * R, 7);
 	int index = 0;
 	for (int i = 0; i < R; i++)
 	{
@@ -1592,6 +1638,10 @@ void addField()
 				Z(index, 0) = i * step + start;
 				Z(index, 1) = j * step + start;
 				Z(index, 2) = k * step + start;
+                Z(index, 3) = 0.0;
+                Z(index, 4) = 0.0;
+                Z(index, 5) = 1.0;
+                Z(index, 6) = 1.0;
 				index++;
 			}
 		}
@@ -1630,7 +1680,7 @@ void displayResults()
         _W = _X * _V;
         _W = _W + _Wm;
         _W = _W.t();
-        _W.reshape(3, _M);
+        _W.reshape(7, _M);
         _W = _W.t();
     }
     else
@@ -1645,25 +1695,41 @@ void displayResults()
                 index++;
             }
         }
-	}
+    }
 
 	// Create the model transformation
 	int q = templateMesh->GetNumberOfPoints();
-    _Tm.set_size(q, 3);
+    vtkSmartPointer<vtkFloatArray> templateMeshNormalsRetrieved =
+        vtkFloatArray::SafeDownCast(templateMesh->GetPointData()->GetNormals());
+    _Tm.set_size(q, 7);
 	for (int i = 0; i < q; i++)
 	{
 		double* point = templateMesh->GetPoint(i);
         _Tm(i, 0) = point[0];
         _Tm(i, 1) = point[1];
         _Tm(i, 2) = point[2];
+        double tMN[3];
+        templateMeshNormalsRetrieved->GetTuple(i, tMN);
+        arma::vec normal(3);
+        normal(0) = tMN[0];
+        normal(1) = tMN[1];
+        normal(2) = tMN[2];
+        Quaternion normalQuat(base, normal);
+        _Tm(i, 3) = normalQuat.getX();
+        _Tm(i, 4) = normalQuat.getY();
+        _Tm(i, 5) = normalQuat.getZ();
+        _Tm(i, 6) = normalQuat.getW();
 	}
     _G = ComputeG(_T, _Tm);
 	_GW = _G * _W;
 
-    arma::mat axes(1, 3);
+    arma::mat axes(1, 7);
     axes(0, 0) = templateAxesPosition[0];
     axes(0, 1) = templateAxesPosition[1];
     axes(0, 2) = templateAxesPosition[2];
+    axes(0, 3) = 0.0;
+    axes(0, 4) = 0.0;
+    axes(0, 5) = 0.0;
     _Ga = ComputeG(_T, axes);
 
 	double startPoint[3];
@@ -1698,23 +1764,42 @@ void displayResults()
 
 	addLabels();
 
-	// Do this so the modified mesh is visible in the first frame
-	for (int i = 0; i < _GW.n_rows; i++)
-	{
-		double* dM = deformedMesh->GetPoint(i);
-		double* tM = templateMesh->GetPoint(i);
-		dM[0] = tM[0] + (interpolation * _GW(i, 0));
-		dM[1] = tM[1] + (interpolation * _GW(i, 1));
-		dM[2] = tM[2] + (interpolation * _GW(i, 2));
-		deformedMesh->GetPoints()->SetPoint(i, dM);
-	}
+    // Do this so the modified mesh is visible in the first frame
+    vtkSmartPointer<vtkFloatArray> deformedMeshNormalsRetrieved =
+        vtkSmartPointer<vtkFloatArray>::New();
+    deformedMeshNormalsRetrieved->SetNumberOfComponents(3);
+    deformedMeshNormalsRetrieved->SetNumberOfTuples(templateMeshNormalsRetrieved->GetNumberOfTuples());
+    arma::vec normal(3);
+    for (int i = 0; i < _GW.n_rows; i++)
+    {
+        double dM[3];
+        double dMN[3];
+        double* tM = templateMesh->GetPoint(i);
+        double tMN[3];
+        templateMeshNormalsRetrieved->GetTuple(i, tMN);
+
+        dM[0] = tM[0] + (interpolation * _GW(i, 0));
+        dM[1] = tM[1] + (interpolation * _GW(i, 1));
+        dM[2] = tM[2] + (interpolation * _GW(i, 2));
+        deformedMesh->GetPoints()->SetPoint(i, dM);
+
+        normal(0) = tMN[0];
+        normal(1) = tMN[1];
+        normal(2) = tMN[2];
+        Quaternion rot((interpolation * _GW(i, 3)), (interpolation * _GW(i, 4)),
+                       (interpolation * _GW(i, 5)), (interpolation * _GW(i, 6)));
+        arma::vec rotPoint = rot.transformPoint(normal);
+        dMN[0] = rotPoint(0);
+        dMN[1] = rotPoint(1);
+        dMN[2] = rotPoint(2);
+        deformedMeshNormalsRetrieved->SetTuple3(i, dMN[0], dMN[1], dMN[2]);
+    }
+    deformedMesh->GetPointData()->SetNormals(deformedMeshNormalsRetrieved);
 
     double pN[3];
     double nV[3];
     startPoint[3];
     endPoint[3];
-    vtkSmartPointer<vtkFloatArray> deformedMeshNormalsRetrieved =
-        vtkFloatArray::SafeDownCast(deformedMesh->GetPointData()->GetNormals());
     count = deformedMeshNormalsRetrieved->GetNumberOfTuples();
     jump = std::max(1.0, ((double)count)/normalCount);
     int index = 0;
@@ -1736,7 +1821,7 @@ void displayResults()
     t->Translate(templateAxesPosition[0] + (interpolation * GaW(0, 0)),
                  templateAxesPosition[1] + (interpolation * GaW(0, 1)),
                  templateAxesPosition[2] + (interpolation * GaW(0, 2)));
-    deformedAxes->SetUserTransform(t);
+    deformedAxes->SetUserTransform(t); /// TODO
 
     deformedAxes->Modified();
 	deformedMesh->Modified();
@@ -1747,23 +1832,38 @@ void displayResults()
 }
 
 void normalize(vtkSmartPointer<vtkPolyData>& loadedPoints, arma::mat& matrix,
-               vtkSmartPointer<vtkPolyData>& loadedMesh = 0, vtkSmartPointer<vtkAxesActor>& axes = 0,
+               vtkSmartPointer<vtkPolyData> loadedMesh = 0, vtkSmartPointer<vtkAxesActor> axes = 0,
                double* position = 0)
 {
 	// Center and resize the template
 	int n = loadedPoints->GetNumberOfPoints();
-	matrix.set_size(n, 3);
+    matrix.set_size(n, 7);
 
 	double minX, minY, minZ;
 	minX = minY = minZ = INT_MAX;
 	double maxX, maxY, maxZ;
 	maxX = maxY = maxZ = INT_MIN;
 
+    double pN[3];
+    vtkSmartPointer<vtkFloatArray> normalsRetrieved =
+        vtkFloatArray::SafeDownCast(loadedMesh->GetPointData()->GetNormals());
+
 	for (int i = 0; i < n; i++)
 	{
+        normalsRetrieved->GetTuple(i, pN);
+
 		matrix(i, 0) = loadedPoints->GetPoint(i)[0];
 		matrix(i, 1) = loadedPoints->GetPoint(i)[1];
 		matrix(i, 2) = loadedPoints->GetPoint(i)[2];
+        arma::vec normal(3);
+        normal(0) = pN[0];
+        normal(1) = pN[1];
+        normal(2) = pN[2];
+        Quaternion normalQuat(base, normal);
+        matrix(i, 3) = normalQuat.getX();
+        matrix(i, 4) = normalQuat.getY();
+        matrix(i, 5) = normalQuat.getZ();
+        matrix(i, 6) = normalQuat.getW();
 
 		minX = std::min(minX, matrix(i, 0));
 		minY = std::min(minY, matrix(i, 1));
@@ -1840,6 +1940,11 @@ int main()
 
 	vtkSmartPointer<vtkPolyData> observedPoints;
 	vtkSmartPointer<vtkPolyData> observedMesh;
+
+    base.set_size(3);
+    base(0) = 0.0;
+    base(1) = 0.0;
+    base(2) = 1.0;
 
     int count;
     double pN[3];
@@ -1977,7 +2082,7 @@ int main()
         templateMatNormals.push_back(actor);
     }
 
-	_W.set_size(meshCount, 3*m);
+    _W.set_size(meshCount, 7*m);
     std::vector<arma::mat> Ws;
 	int printNum = startNum;
 	for (int i = 0; i < meshCount; i++)
@@ -2041,13 +2146,14 @@ int main()
 
 		cpd::Nonrigid nonrigid(0.000001, 150, 0.1, false, 1.0, 1.0, 1.0);
 
+        //cpd::Registration::ResultPtr result = nonrigid.run(observedMatrixScaled, templateMatrixScaled);
         cpd::Registration::ResultPtr result = nonrigid.run(observedMatrix, templateMatrix);
 
-		// W = m x 3
+        // W = m x 7
 		int index = 0;
 		for (int r = 0; r < m; r++)
 		{
-			for (int c = 0; c < 3; c++)
+            for (int c = 0; c < 7; c++)
 			{
 				_W(i, index) = result->W(r, c);
 				index++;
@@ -2102,7 +2208,7 @@ int main()
 	{
 		arma::mat Y = Ws[i];
 		Y = Y.t();
-		Y.reshape(3*m, 1);
+        Y.reshape(7*m, 1);
 		Y = Y.t();
 		Y = Y - _Wm;
 
@@ -2171,7 +2277,7 @@ int main()
         _XsNL.push_back(neXt);
 	}
 
-	_W.resize(_M, 3);
+    _W.resize(_M, 7);
 
 	displayResults();
 

@@ -19,7 +19,7 @@ public:
     virtual double getParam(int index) = 0;
     virtual void setParam(int index, double param) = 0;
 
-    virtual arma::mat gradientP(const arma::mat X) const = 0;
+    virtual arma::mat gradientP(const arma::mat X, int index) const = 0;
     virtual arma::mat gradientX(const arma::mat X, int i, int j) const = 0;
 
 private:
@@ -45,7 +45,7 @@ public:
 
 	std::vector<Kernel::Ptr> getKernels() const;
 
-    arma::mat gradientP(const arma::mat X) const;
+    arma::mat gradientP(const arma::mat X, int index) const;
     arma::mat gradientX(const arma::mat X, int i, int j) const;
 
 private:
@@ -58,23 +58,23 @@ private:
 class RBF_Kernel : public Kernel
 {
 public:
-    RBF_Kernel(double alpha = 1.0, /*double beta = 0.1,*/ double gamma = 0.1);
+    RBF_Kernel(double alpha = 1.0, double beta = 0.0, double gamma = 0.1);
     RBF_Kernel(const RBF_Kernel& kernel);
     ~RBF_Kernel();
 
     typedef std::shared_ptr<RBF_Kernel> Ptr;
-    static Ptr New(double alpha = 1.0, /*double beta = 0.1,*/ double gamma = 0.1);
+    static Ptr New(double alpha = 1.0, double beta = 0.0, double gamma = 0.1);
     Kernel::Ptr clone();
 
     int numParams() const;
     double getParam(int index);
     void setParam(int index, double param);
 
-    arma::mat gradientP(const arma::mat X) const;
+    arma::mat gradientP(const arma::mat X, int index) const;
     arma::mat gradientX(const arma::mat X, int i, int j) const;
 
 private:
-    double _params[2]; // alpha, /*beta,*/ gamma
+    double _params[3]; // alpha, beta, gamma
 
     arma::mat kernalize(const arma::mat X1, const arma::mat X2) const;
 };
@@ -82,23 +82,23 @@ private:
 class Linear_Kernel : public Kernel
 {
 public:
-    Linear_Kernel(double v = 1.0);
+    Linear_Kernel(double alpha = 1.0);
     Linear_Kernel(const Linear_Kernel& kernel);
     ~Linear_Kernel();
 
     typedef std::shared_ptr<Linear_Kernel> Ptr;
-    static Ptr New(double v = 1.0);
+    static Ptr New(double alpha = 1.0);
     Kernel::Ptr clone();
 
     int numParams() const;
     double getParam(int index);
     void setParam(int index, double param);
 
-    arma::mat gradientP(const arma::mat X) const;
+    arma::mat gradientP(const arma::mat X, int index) const;
     arma::mat gradientX(const arma::mat X, int i, int j) const;
 
 private:
-    double _params[1]; // v
+    double _params[1]; // alpha
 
     arma::mat kernalize(const arma::mat X1, const arma::mat X2) const;
 };
