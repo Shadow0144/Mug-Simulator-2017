@@ -21,6 +21,8 @@ public:
 
     //virtual static int numParams() const = 0;
 
+    virtual std::string getKernelName() = 0;
+
     virtual arma::mat gradientP(const arma::mat X, int index) const = 0;
     virtual arma::mat gradientX(const arma::mat X, int i, int j) const = 0;
 
@@ -47,7 +49,10 @@ public:
 
     static int numParameters();
 
+    std::string getKernelName();
+
     std::vector<Kernel::Ptr> getKernels() const;
+    void setKernels(const std::vector<Kernel::Ptr>& kernels);
 
     arma::mat gradientP(const arma::mat X, int index) const;
     arma::mat gradientX(const arma::mat X, int i, int j) const;
@@ -76,6 +81,8 @@ public:
 
     static int numParameters();
 
+    std::string getKernelName();
+
     arma::mat gradientP(const arma::mat X, int index) const;
     arma::mat gradientX(const arma::mat X, int i, int j) const;
 
@@ -101,6 +108,8 @@ public:
     void setParam(int index, double param);
 
     static int numParameters();
+
+    std::string getKernelName();
 
     arma::mat gradientP(const arma::mat X, int index) const;
     arma::mat gradientX(const arma::mat X, int i, int j) const;

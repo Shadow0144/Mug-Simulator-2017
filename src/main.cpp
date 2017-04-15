@@ -394,11 +394,11 @@ void updateArrows()
 	double startPoint[3];
 	double endPoint[3];
 
-	//  Create the vector field
-	const float start = -1;
-	const float step = 2.0/R;
+    //  Update the vector field
+    const float start = -1.0;
+    const float step = 2.0/(R-1.0);
     arma::mat Z(R * R * R, 7);
-	int index = 0;
+    int index = 0;
 	for (int i = 0; i < R; i++)
 	{
 		for (int j = 0; j < R; j++)

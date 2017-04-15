@@ -87,9 +87,19 @@ int Compound_Kernel::numParameters()
     return -1;
 }
 
+std::string Compound_Kernel::getKernelName()
+{
+    return "Compound";
+}
+
 std::vector<Kernel::Ptr> Compound_Kernel::getKernels() const
 {
     return _kernels;
+}
+
+void Compound_Kernel::setKernels(const std::vector<Kernel::Ptr>& kernels)
+{
+    _kernels = kernels;
 }
 
 arma::mat Compound_Kernel::gradientP(const arma::mat X, int index) const
@@ -180,6 +190,11 @@ void RBF_Kernel::setParam(int index, double param)
 int RBF_Kernel::numParameters()
 {
     return 3;
+}
+
+std::string RBF_Kernel::getKernelName()
+{
+    return "RBF";
 }
 
 arma::mat RBF_Kernel::gradientP(const arma::mat X, int index) const
@@ -307,6 +322,11 @@ void Linear_Kernel::setParam(int index, double param)
 int Linear_Kernel::numParameters()
 {
     return 1;
+}
+
+std::string Linear_Kernel::getKernelName()
+{
+    return "Linear";
 }
 
 arma::mat Linear_Kernel::gradientP(const arma::mat X, int) const
