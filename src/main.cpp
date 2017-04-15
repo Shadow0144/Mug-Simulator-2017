@@ -21,7 +21,7 @@ VTK_MODULE_INIT(vtkInteractionStyle)
 #include <fstream>
 
 #include <vtkPLYReader.h>
-#include <vtkOBJReader.h>
+//#include <vtkOBJReader.h>
 
 #include <vtkArrowSource.h>
 #include <vtkPolyData.h>
@@ -1036,7 +1036,7 @@ vtkStandardNewMacro(KeyPressInteractorStyle)
 
 void loadMesh(const char* fileName, vtkPolyData* mesh)
 {
-    printf("Loading " ANSI_COLOR_YELLOW "ply" ANSI_COLOR_RESET " file " ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "... ", fileName); fflush(stdout);
+    printf("Loading " ANSI_COLOR_YELLOW "mesh" ANSI_COLOR_RESET " file " ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "... ", fileName); fflush(stdout);
 	vtkPLYReader* sceneReader = vtkPLYReader::New();
 	sceneReader->SetFileName(fileName);
 	sceneReader->Update();
@@ -1046,8 +1046,8 @@ void loadMesh(const char* fileName, vtkPolyData* mesh)
 
 void loadPoints(const char* fileName, vtkPolyData* points)
 {
-	printf("Loading " ANSI_COLOR_CYAN "obj" ANSI_COLOR_RESET " file " ANSI_COLOR_CYAN "%s" ANSI_COLOR_RESET "... ", fileName); fflush(stdout);
-	vtkOBJReader* sceneReader = vtkOBJReader::New();
+    printf("Loading " ANSI_COLOR_CYAN "point" ANSI_COLOR_RESET " file " ANSI_COLOR_CYAN "%s" ANSI_COLOR_RESET "... ", fileName); fflush(stdout);
+    vtkPLYReader* sceneReader = vtkPLYReader::New();
 	sceneReader->SetFileName(fileName);
 	sceneReader->Update();
 	points->ShallowCopy(sceneReader->GetOutput());
@@ -1506,11 +1506,11 @@ int main()
 	char temp[19];
 	if (dense)
 	{
-		std::sprintf(temp, "../data/mug%02d_d.obj", templateNum);
+        std::sprintf(temp, "../data/mug%02d_d.ply", templateNum);
 	}
 	else
 	{
-		std::sprintf(temp, "../data/mug%02d_r.obj", templateNum);
+        std::sprintf(temp, "../data/mug%02d_r.ply", templateNum);
 	}
 	loadPoints(temp, templatePoints);
 
@@ -1541,11 +1541,11 @@ int main()
 			char obs[19];
 			if (dense)
 			{
-				std::sprintf(obs, "../data/mug%02d_d.obj", i);
+                std::sprintf(obs, "../data/mug%02d_d.ply", i);
 			}
 			else
 			{
-				std::sprintf(obs, "../data/mug%02d_r.obj", i);
+                std::sprintf(obs, "../data/mug%02d_r.ply", i);
 			}
 			observedPoints = vtkSmartPointer<vtkPolyData>::New();
 			loadPoints(obs, observedPoints);
