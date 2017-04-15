@@ -9,7 +9,7 @@
 class GPLVMCostFunctor : public ceres::FirstOrderFunction
 {
 public:
-    GPLVMCostFunctor(arma::mat& Y, int q, Kernel::Ptr kernel);
+    GPLVMCostFunctor(arma::mat Y, int q, Kernel::Ptr kernel);
 
     ~GPLVMCostFunctor();
 
@@ -29,30 +29,20 @@ private:
 class GPLVM
 {
 public:
-    GPLVM(arma::mat& Y, int q, Kernel::Ptr kernel);
+    GPLVM(arma::mat Y, int q, Kernel::Ptr kernel);
     GPLVM(const GPLVM& gplvm);
     ~GPLVM();
 
     typedef std::shared_ptr<GPLVM> Ptr;
-    static Ptr New(arma::mat& Y, int q, Kernel::Ptr kernel);
+    static Ptr New(arma::mat Y, int q, Kernel::Ptr kernel);
 
-    Kernel::Ptr getKernel() const;
-    arma::mat getX() const;
-    arma::mat getY() const;
-    void setKernel(const Kernel::Ptr& kernel);
-    void setX(const arma::mat& X);
-    void setY(const arma::mat& Y);
+    Kernel::Ptr getKernel();
+    arma::mat getX();
+    arma::mat getY();
 
-    int getN() const;
-    int getP() const;
-    int getQ() const;
-
-    double getLogProbability(const arma::mat& XStar) const;
-
-    arma::mat predict(const arma::mat& XStar) const;
+    arma::mat predict(arma::mat XStar);
 
     void learn();
-    void learn(const arma::mat& X);
 
 private:
     int _n;

@@ -61,7 +61,6 @@ VTK_MODULE_INIT(vtkInteractionStyle)
 #include <vtkPoints.h>
 
 #include <vtkLookupTable.h>
-#include <vtkFloatArray.h>
 #include <vtkDoubleArray.h>
 #include <vtkCellData.h>
 #include <vtkPolyData.h>
@@ -84,20 +83,15 @@ VTK_MODULE_INIT(vtkInteractionStyle)
 #include <vtkSimplePointsReader.h>
 
 #include "gplvm.hpp"
-#include "quaternion.hpp"
 
-int meshCount = 7;
+int meshCount = 3;
 int currentMesh = 0;
 const int templateNum = 2;
 const int startNum = 1;
 
 bool dense = false;
 
-int numParams = 4;
-
-const double normalCount = 50.0;
-
-const double rotationScaleFactor = 100.0;
+int numParams = 2;
 
 const double points = 35.0;
 
@@ -109,10 +103,6 @@ std::vector<double> paramStepMod;
 
 const int R = 5; // Number of arrows in the field
 const double size = 10.0; // Size of arrows relative to density
-
-const double tShaftR = 0.01;
-const double tTipR = 0.025;
-const double tTipL = 0.05;
 
 vtkSmartPointer<vtkPolyData> templateMesh;
 vtkSmartPointer<vtkPolyData> deformedMesh;
@@ -127,24 +117,14 @@ std::vector<vtkSmartPointer< vtkTransformPolyDataFilter > > transformArrowsTrans
 std::vector<vtkSmartPointer< vtkTransformPolyDataFilter > > fieldArrowsTransforms;
 std::vector<vtkSmartPointer< vtkLookupTable > > luts;
 
-std::vector<vtkSmartPointer< vtkActor > > templateMeshNormals;
-std::vector<vtkSmartPointer< vtkArrowSource > > templateMeshNormalArrows;
-std::vector<vtkSmartPointer< vtkActor > > deformedMeshNormals;
-std::vector<vtkSmartPointer< vtkArrowSource > > deformedMeshNormalArrows;
-std::vector< std::vector<vtkSmartPointer< vtkActor > > > observedMeshNormals;
-std::vector< std::vector<vtkSmartPointer< vtkArrowSource > > > observedMeshNormalArrows;
-std::vector<vtkSmartPointer< vtkActor > > templateMatNormals;
-std::vector<vtkSmartPointer< vtkArrowSource > > templateMatNormalArrows;
-std::vector < std::vector<vtkSmartPointer< vtkActor > > > observedMatNormals;
-std::vector < std::vector<vtkSmartPointer< vtkArrowSource > > > observedMatNormalArrows;
-std::vector <vtkSmartPointer< vtkTransformPolyDataFilter > > deformedMeshNormalArrowTransforms;
-
 vtkSmartPointer<vtkAxesActor> templateAxes;
 vtkSmartPointer<vtkAxesActor> deformedAxes;
 std::vector< vtkSmartPointer< vtkAxesActor > > observedAxes;
 vtkSmartPointer<vtkTransform> templateAxesTransform;
 double templateAxesPosition[3];
 const double axesScale = 0.25;
+
+arma::mat templateAxesPoints;
 
 double red[3] = {1.0, 0.0, 0.0};
 double green[3] = {0.0, 1.0, 0.0};
@@ -170,8 +150,6 @@ const int modelValueText = 13;
 const int modelTypeText = 14;
 const int XSetText = 15;
 //const int pointSetText = 16;
-const int axesText = 17;
-const int normalsText = 18;
 
 arma::mat _T; // Template
 arma::mat _Tm; // Template mesh
@@ -198,7 +176,6 @@ vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor;
 vtkSmartPointer<vtkPolyDataMapper> baseMapper;
 vtkSmartPointer<vtkPolyDataMapper> deformedMapper;
 vtkSmartPointer<vtkPolyDataMapper> dataMapper;
-vtkSmartPointer<vtkPolyDataMapper> dataPointsMapper;
 
 vtkSmartPointer<vtkActor> baseActor;
 vtkSmartPointer<vtkActor> deformedActor;
@@ -214,14 +191,11 @@ bool b = false;
 bool a = false;
 bool v = true;
 bool s = false;
-bool n = false;
 
 bool linear = false;
 bool displayingMesh = true;
 
 int currentParam;
-
-arma::vec base;
 
 const double beta_k = -2 * std::pow(1, 2); // beta = 1
 
@@ -234,22 +208,17 @@ arma::mat ComputeG(arma::mat base, arma::mat obs)
 
 	arma::mat Gr(N, M);
 
-    arma::mat basePrime = base.cols(0, 2);
-    arma::mat obsPrime = obs.cols(0, 2);
-
 	for (arma::uword i = 0; i < M; ++i)
 	{
-        arma::mat Tz = arma::repmat(basePrime.row(i), N, 1);
-        Gr.col(i) = arma::exp(arma::sum(arma::pow(obsPrime - Tz, 2), 1) / beta_k);
+		arma::mat Tz = arma::repmat(base.row(i), N, 1);
+		Gr.col(i) = arma::exp(arma::sum(arma::pow(obs - Tz, 2), 1) / beta_k);
 	}
 
 	return Gr;
 }
 
-double transformArrow(vtkSmartPointer<vtkArrowSource>& arrowSource,
-                      vtkSmartPointer<vtkTransformPolyDataFilter>& transformPD,
-                      double* startPoint, double* endPoint, double* nV = 0,
-                      bool field = false)
+double transformArrow(vtkSmartPointer<vtkTransformPolyDataFilter>& transformPD,
+					  double* startPoint, double* endPoint, double* nV = 0, bool field = false)
 {
 	// Compute a basis
 	double normalizedX[3];
@@ -294,9 +263,6 @@ double transformArrow(vtkSmartPointer<vtkArrowSource>& arrowSource,
 	}
 	else
 	{
-        arrowSource->SetShaftRadius(tShaftR/length);
-        arrowSource->SetTipRadius(tTipR/length);
-        arrowSource->SetTipLength(tTipL/length);
         transform->Scale(length, length, length);
 	}
 	transformPD->SetTransform(transform);
@@ -340,55 +306,6 @@ void colorArrow(vtkSmartPointer<vtkLookupTable> lut, double* dist)
 	lut->Modified();
 }
 
-void colorNormalArrow(vtkSmartPointer<vtkArrowSource> arrowSource,
-                      vtkSmartPointer<vtkMapper> mapper, double r, double g, double b)
-{
-    vtkSmartPointer<vtkLookupTable> lut =
-            vtkSmartPointer<vtkLookupTable>::New();
-
-    double shaft[] = {0.5, 0.5, 0.5};
-    double tip[] = {r, g, b};
-
-    lut->SetTableValue(0, shaft[0], shaft[0], shaft[0], 1);
-    lut->SetTableValue(1, shaft[0], shaft[0], shaft[0], 1);
-    lut->SetTableValue(2, shaft[0], shaft[0], shaft[0], 1);
-    lut->SetTableValue(3, shaft[0], shaft[0], shaft[0], 1);
-    lut->SetTableValue(4, shaft[0], shaft[0], shaft[0], 1);
-    lut->SetTableValue(5, shaft[0], shaft[0], shaft[0], 1);
-
-    lut->SetTableValue(6, tip[0], tip[0], tip[0], 1);
-    lut->SetTableValue(7, tip[0], tip[0], tip[0], 1);
-    lut->SetTableValue(8, tip[0], tip[1], tip[2], 1);
-    lut->SetTableValue(9, tip[0], tip[1], tip[2], 1);
-    lut->SetTableValue(10, tip[0], tip[1], tip[2], 1);
-    lut->SetTableValue(11, tip[0], tip[1], tip[2], 1);
-    lut->SetTableValue(12, tip[0], tip[1], tip[2], 1);
-    lut->SetTableValue(13, tip[0], tip[1], tip[2], 1);
-    lut->SetTableValue(14, tip[0], tip[1], tip[2], 1);
-
-    lut->Modified();
-
-    // Create cell data
-    arrowSource->Update();
-    int indices = arrowSource->GetOutput()->GetNumberOfCells();
-    vtkSmartPointer<vtkDoubleArray> cellData =
-            vtkSmartPointer<vtkDoubleArray>::New();
-    for (int i = 0; i < indices; i++)
-    {
-        cellData->InsertNextValue(i);
-    }
-
-    // Create a lookup table to map cell data to colors
-    lut->SetNumberOfTableValues(indices);
-    lut->Build();
-
-    arrowSource->Update(); // Force an update so we can set cell data
-    arrowSource->GetOutput()->GetCellData()->SetScalars(cellData);
-
-    mapper->SetScalarRange(0, indices);
-    mapper->SetLookupTable(lut);
-}
-
 void updateArrows()
 {
 	double startPoint[3];
@@ -397,25 +314,21 @@ void updateArrows()
     //  Update the vector field
     const float start = -1.0;
     const float step = 2.0/(R-1.0);
-    arma::mat Z(R * R * R, 7);
+    arma::mat Z(R * R * R, 3);
     int index = 0;
-	for (int i = 0; i < R; i++)
-	{
-		for (int j = 0; j < R; j++)
-		{
-			for (int k = 0; k < R; k++)
-			{
-				Z(index, 0) = i * step + start;
-				Z(index, 1) = j * step + start;
-				Z(index, 2) = k * step + start;
-                Z(index, 3) = 0.0;
-                Z(index, 4) = 0.0;
-                Z(index, 5) = 1.0;
-                Z(index, 6) = 1.0;
-				index++;
-			}
-		}
-	}
+    for (int i = 0; i < R; i++)
+    {
+        for (int j = 0; j < R; j++)
+        {
+            for (int k = 0; k < R; k++)
+            {
+                Z(index, 0) = i * step + start;
+                Z(index, 1) = j * step + start;
+                Z(index, 2) = k * step + start;
+                index++;
+            }
+        }
+    }
 	arma::mat Gz = ComputeG(_T, Z);
 	arma::mat GZ = Gz * _W;
 
@@ -431,7 +344,7 @@ void updateArrows()
 		endPoint[2] = startPoint[2] + GZ(i, 2);
 
 		double nV[3];
-        transformArrow(fieldArrowsSource[i], fieldArrowsTransforms[i], startPoint, endPoint, nV, true);
+        transformArrow(fieldArrowsTransforms[i], startPoint, endPoint, nV, true);
 		colorArrow(luts[i], nV);
 		fieldArrows[i]->Modified();
 	}
@@ -448,20 +361,17 @@ void updateArrows()
 		endPoint[1] = startPoint[1] + _GW((int)i, 1);
 		endPoint[2] = startPoint[2] + _GW((int)i, 2);
 
-        transformArrow(transformArrowsSource[arrowIndex], transformArrowsTransforms[arrowIndex], startPoint, endPoint);
+        transformArrow(transformArrowsTransforms[arrowIndex], startPoint, endPoint);
 		transformArrows[arrowIndex]->Modified();
 		arrowIndex++;
 	}
 }
 
-vtkSmartPointer<vtkActor> makeArrow(double* startPoint, double* endPoint,
-                                    vtkSmartPointer<vtkArrowSource>& arrowSource,
-                                    vtkSmartPointer<vtkMapper>& mapper,
-                                    vtkSmartPointer<vtkTransformPolyDataFilter>& transformPD,
-                                    bool field = false, bool colored = false)
+vtkSmartPointer<vtkActor> makeArrow(double* startPoint, double* endPoint, bool field = false)
 {
     // Create an arrow
-    arrowSource = vtkSmartPointer<vtkArrowSource>::New();
+	vtkSmartPointer<vtkArrowSource> arrowSource =
+			vtkSmartPointer<vtkArrowSource>::New();
 
 	// Compute a basis
 	double normalizedX[3];
@@ -511,61 +421,132 @@ vtkSmartPointer<vtkActor> makeArrow(double* startPoint, double* endPoint,
 		arrowSource->SetTipRadius(0.025);
 		arrowSource->SetTipLength(0.3);
 
-        if (colored)
-        {
-            // Create cell data
-            arrowSource->Update();
-            indices = arrowSource->GetOutput()->GetNumberOfCells();
-            vtkSmartPointer<vtkDoubleArray> cellData =
-                    vtkSmartPointer<vtkDoubleArray>::New();
-            for (int i = 0; i < indices; i++)
-            {
-                cellData->InsertNextValue(i);
-            }
+		// Create cell data
+		arrowSource->Update();
+		indices = arrowSource->GetOutput()->GetNumberOfCells();
+		vtkSmartPointer<vtkDoubleArray> cellData =
+				vtkSmartPointer<vtkDoubleArray>::New();
+		for (int i = 0; i < indices; i++)
+		{
+			cellData->InsertNextValue(i);
+		}
 
-            // Create a lookup table to map cell data to colors
-            lut->SetNumberOfTableValues(indices);
-            lut->Build();
+		// Create a lookup table to map cell data to colors
+		lut->SetNumberOfTableValues(indices);
+		lut->Build();
 
-            colorArrow(lut, normalizedX);
-            luts.push_back(lut);
+		colorArrow(lut, normalizedX);
+		luts.push_back(lut);
 
-            arrowSource->Update(); // Force an update so we can set cell data
-            arrowSource->GetOutput()->GetCellData()->SetScalars(cellData);
-        }
-        else { }
+		arrowSource->Update(); // Force an update so we can set cell data
+		arrowSource->GetOutput()->GetCellData()->SetScalars(cellData);
 
         transform->Scale(0.1*(size/R), 0.1*(size/R), 0.1*(size/R));
 	}
 	else // Not field
 	{
-        arrowSource->SetShaftRadius(tShaftR/length);
-        arrowSource->SetTipRadius(tTipR/length);
-        arrowSource->SetTipLength(tTipL/length);
+		arrowSource->SetShaftRadius(0.1);
+		arrowSource->SetTipRadius(0.25);
+        arrowSource->SetTipLength(0.5);
         transform->Scale(length, length, length);
 	}
 
 	// Transform the polydata
-    transformPD = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+	vtkSmartPointer<vtkTransformPolyDataFilter> transformPD =
+			vtkSmartPointer<vtkTransformPolyDataFilter>::New();
 	transformPD->SetTransform(transform);
 	transformPD->SetInputConnection(arrowSource->GetOutputPort());
 
     // Create a mapper and actor for the arrow
-    mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+	vtkSmartPointer<vtkPolyDataMapper> mapper =
+			vtkSmartPointer<vtkPolyDataMapper>::New();
 	vtkSmartPointer<vtkActor> actor =
 			vtkSmartPointer<vtkActor>::New();
 	mapper->SetInputConnection(transformPD->GetOutputPort());
 
-    if (colored)
+	if (field)
 	{
 		mapper->SetScalarRange(0, indices);
-        mapper->SetLookupTable(lut);
+		mapper->SetLookupTable(lut);
+		fieldArrowsSource.push_back(arrowSource);
+		fieldArrowsTransforms.push_back(transformPD);
 	}
-    else { }
+	else
+	{
+		transformArrowsSource.push_back(arrowSource);
+		transformArrowsTransforms.push_back(transformPD);
+	}
 
 	actor->SetMapper(mapper);
 
 	return actor;
+}
+
+void updateAxes()
+{
+    arma::mat Ga = ComputeG(_T, templateAxesPoints);
+    arma::mat Za = Ga * _W;
+
+    arma::mat deformedAxesPoints = templateAxesPoints + Za;
+
+    arma::mat B(3, 3);
+    B.zeros();
+    for (int i = 0; i < deformedAxesPoints.n_rows; i++)
+    {
+        arma::mat w(3, 1); // Base
+        w(0, 0) = templateAxesPoints(i%4, 0)-templateAxesPoints(0, 0);
+        w(1, 0) = templateAxesPoints(i%4, 1)-templateAxesPoints(0, 1);
+        w(2, 0) = templateAxesPoints(i%4, 2)-templateAxesPoints(0, 2);
+        w = arma::normalise(w, 2, 0);
+        arma::mat v(1, 3); // Deformed
+        v(0, 0) = deformedAxesPoints(i, 0)-deformedAxesPoints(0, 0);
+        v(0, 1) = deformedAxesPoints(i, 1)-deformedAxesPoints(0, 1);
+        v(0, 2) = deformedAxesPoints(i, 2)-deformedAxesPoints(0, 2);
+        v = arma::normalise(v, 2, 1);
+        B += w*v;
+    }
+    arma::mat U, V;
+    arma::vec s;
+    arma::svd(U, s, V, B);
+    arma::mat M = arma::eye(3, 3);
+    M(2, 2) = arma::det(U) * arma::det(V);
+    arma::mat Rot = U * M * V.t();
+
+    double thetaX = std::atan2(Rot(2,1), Rot(2,2)) * interpolation;
+    double thetaY = std::atan2(-(2,0), std::sqrt(Rot(2,1)*Rot(2,1)+Rot(2,2)*Rot(2,2))) * interpolation;
+    double thetaZ = std::atan2(Rot(1,0), Rot(0,0)) * interpolation;
+
+    arma::mat X(3, 3);
+    X(0, 0) = 1; X(0, 1) = 0; X(0, 2) = 0;
+    X(1, 0) = 0; X(1, 1) = std::cos(thetaX); X(1, 2) = -std::sin(thetaX);
+    X(2, 0) = 0; X(2, 1) = std::sin(thetaX); X(2, 2) = std::cos(thetaX);
+    arma::mat Y(3, 3);
+    Y(0, 0) = std::cos(thetaY); Y(0, 1) = 0; Y(0, 2) = std::sin(thetaY);
+    Y(1, 0) = 0; Y(1, 1) = 1; Y(1, 2) = 0;
+    Y(2, 0) = -std::sin(thetaY); Y(2, 1) = 0; Y(2, 2) = std::cos(thetaY);
+    arma::mat Z(3, 3);
+    Z(0, 0) = std::cos(thetaZ); Z(0, 1) = -std::sin(thetaZ); Z(0, 2) = 0;
+    Z(1, 0) = std::sin(thetaZ); Z(1, 1) = std::cos(thetaZ); Z(1, 2) = 0;
+    Z(2, 0) = 0; Z(2, 1) = 0; Z(2, 2) = 1;
+    Rot = Z*Y*X;
+    double t1 = (deformedAxesPoints(0, 0)-templateAxesPoints(0, 0))*interpolation;
+    double t2 = (deformedAxesPoints(0, 1)-templateAxesPoints(0, 1))*interpolation;
+    double t3 = (deformedAxesPoints(0, 2)-templateAxesPoints(0, 2))*interpolation;
+    vtkSmartPointer<vtkMatrix4x4> matrix = vtkSmartPointer<vtkMatrix4x4>::New();
+    matrix->SetElement(0, 0, Rot(0, 0)); matrix->SetElement(0, 1, Rot(0, 1)); matrix->SetElement(0, 2, Rot(0, 2)); matrix->SetElement(0, 3,  t1);
+    matrix->SetElement(1, 0, Rot(1, 0)); matrix->SetElement(1, 1, Rot(1, 1)); matrix->SetElement(1, 2, Rot(1, 2)); matrix->SetElement(1, 3,  t2);
+    matrix->SetElement(2, 0, Rot(2, 0)); matrix->SetElement(2, 1, Rot(2, 1)); matrix->SetElement(2, 2, Rot(2, 2)); matrix->SetElement(2, 3,  t3);
+    matrix->SetElement(3, 0,       0.0); matrix->SetElement(3, 1,       0.0); matrix->SetElement(3, 2,       0.0); matrix->SetElement(3, 3, 1.0);
+
+    vtkSmartPointer<vtkTransform> defTransform =
+            vtkSmartPointer<vtkTransform>::New();
+    defTransform->PostMultiply();
+    defTransform->Concatenate(templateAxesTransform);
+    defTransform->Translate(-templateAxesPoints(0, 0), -templateAxesPoints(0, 1), -templateAxesPoints(0, 2));
+    defTransform->Concatenate(matrix);
+    defTransform->Translate(templateAxesPoints(0, 0), templateAxesPoints(0, 1), templateAxesPoints(0, 2));
+    deformedAxes->SetUserTransform(defTransform);
+    deformedAxes->Modified();
 }
 
 // Define interaction style
@@ -602,26 +583,6 @@ public:
 					renderer->AddActor(basePointsActor);
 				}
                 if (s) renderer->AddActor(templateAxes);
-                if (n)
-                {
-                    if (displayingMesh)
-                    {
-                        int count = templateMeshNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(templateMeshNormals[i]);
-                        }
-                    }
-                    else
-                    {
-                        int count = templateMatNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(templateMatNormals[i]);
-                        }
-                    }
-                }
-                else { }
 				legend->SetEntryColor(baseText, red);
 			}
 			else
@@ -635,26 +596,6 @@ public:
 					renderer->RemoveActor(basePointsActor);
 				}
                 if (s) renderer->RemoveActor(templateAxes);
-                if (n)
-                {
-                    if (displayingMesh)
-                    {
-                        int count = templateMeshNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(templateMeshNormals[i]);
-                        }
-                    }
-                    else
-                    {
-                        int count = templateMatNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(templateMatNormals[i]);
-                        }
-                    }
-                }
-                else { }
 				legend->SetEntryColor(baseText, grey);
 			}
 			changed = true;
@@ -665,31 +606,15 @@ public:
 			if (g)
 			{
 				renderer->AddActor(deformedActor);
-                if (s) renderer->AddActor(deformedAxes);if (n)
-                {
-                    int count = deformedMeshNormals.size();
-                    for (int i = 0; i < count; i++)
-                    {
-                        renderer->AddActor(deformedMeshNormals[i]);
-                    }
-                }
-                else { }
+                if (s) renderer->AddActor(deformedAxes);
 				legend->SetEntryColor(deformedText, green);
 			}
 			else
 			{
 				renderer->RemoveActor(deformedActor);
-                if (s) renderer->RemoveActor(deformedAxes);if (n)
-                {
-                    int count = deformedMeshNormals.size();
-                    for (int i = 0; i < count; i++)
-                    {
-                        renderer->RemoveActor(deformedMeshNormals[i]);
-                    }
-                }
-                else { }
+                if (s) renderer->RemoveActor(deformedAxes);
 				legend->SetEntryColor(deformedText, grey);
-            }
+			}
 			changed = true;
 		}
 		else if (key == "b")
@@ -706,26 +631,6 @@ public:
 					renderer->AddActor(dataPointsActor);
 				}
                 if (s) renderer->AddActor(observedAxes[currentMesh]);
-                if (n)
-                {
-                    if (displayingMesh)
-                    {
-                        int count = observedMeshNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(observedMeshNormals[currentMesh][i]);
-                        }
-                    }
-                    else
-                    {
-                        int count = observedMatNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(observedMatNormals[currentMesh][i]);
-                        }
-                    }
-                }
-                else { }
 				legend->SetEntryColor(observedText, blue);
             }
 			else
@@ -739,26 +644,6 @@ public:
 					renderer->RemoveActor(dataPointsActor);
 				}
                 if (s) renderer->RemoveActor(observedAxes[currentMesh]);
-                if (n)
-                {
-                    if (displayingMesh)
-                    {
-                        int count = observedMeshNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(observedMeshNormals[currentMesh][i]);
-                        }
-                    }
-                    else
-                    {
-                        int count = observedMatNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(observedMatNormals[currentMesh][i]);
-                        }
-                    }
-                }
-                else { }
 				legend->SetEntryColor(observedText, grey);
 			}
 			changed = true;
@@ -812,47 +697,16 @@ public:
 			if (displayingMesh)
 			{
 				dataMapper->SetInputData(observedMeshes[currentMesh]);
-                dataMapper->Modified();
 			}
 			else
 			{
-                dataPointsMapper->SetInputData(observedPointsVector[currentMesh]);
-                dataPointsMapper->Modified();
-            }
+				dataMapper->SetInputData(observedPointsVector[currentMesh]);
+			}
+			dataMapper->Modified();
             if (s)
             {
                 renderer->RemoveActor(observedAxes[previousMesh]);
                 renderer->AddActor(observedAxes[currentMesh]);
-            }
-            else { }
-            if (n)
-            {
-                if (displayingMesh)
-                {
-                    int count = observedMeshNormals[previousMesh].size();
-                    for (int i = 0; i < count; i++)
-                    {
-                        renderer->RemoveActor(observedMeshNormals[previousMesh][i]);
-                    }
-                    count = observedMeshNormals[currentMesh].size();
-                    for (int i = 0; i < count; i++)
-                    {
-                        renderer->AddActor(observedMeshNormals[currentMesh][i]);
-                    }
-                }
-                else
-                {
-                    int count = observedMatNormals[previousMesh].size();
-                    for (int i = 0; i < count; i++)
-                    {
-                        renderer->RemoveActor(observedMatNormals[previousMesh][i]);
-                    }
-                    count = observedMeshNormals[currentMesh].size();
-                    for (int i = 0; i < count; i++)
-                    {
-                        renderer->AddActor(observedMatNormals[currentMesh][i]);
-                    }
-                }
             }
             else { }
 			char valueValue[18];
@@ -863,35 +717,25 @@ public:
 		}
 		else if (key == "Left")
 		{
-            double prevInterpolation = interpolation;
 			interpolation = std::max(0.01, interpolation - step);
-            if (prevInterpolation != interpolation)
-            {
-                std::stringstream stream;
-                stream << std::fixed << std::setprecision(2) << interpolation;
-                std::string s = stream.str();
-                std::string valueValue = "Transform Value: +" + s;
-                legend->SetEntryString(valueText, valueValue.c_str());
-                legend->Modified();
-                changed = true;
-            }
-            else { }
+			std::stringstream stream;
+			stream << std::fixed << std::setprecision(2) << interpolation;
+			std::string s = stream.str();
+			std::string valueValue = "Transform Value: +" + s;
+			legend->SetEntryString(valueText, valueValue.c_str());
+			legend->Modified();
+			changed = true;
 		}
 		else if (key == "Right")
 		{
-            double prevInterpolation = interpolation;
             interpolation = std::min(0.99, interpolation + step);
-            if (prevInterpolation != interpolation)
-            {
-                std::stringstream stream;
-                stream << std::fixed << std::setprecision(2) << interpolation;
-                std::string s = stream.str();
-                std::string valueValue = "Transform Value: +" + s;
-                legend->SetEntryString(valueText, valueValue.c_str());
-                legend->Modified();
-                changed = true;
-            }
-            else { }
+			std::stringstream stream;
+			stream << std::fixed << std::setprecision(2) << interpolation;
+			std::string s = stream.str();
+			std::string valueValue = "Transform Value: +" + s;
+			legend->SetEntryString(valueText, valueValue.c_str());
+			legend->Modified();
+			changed = true;
 		}
 		else if (key == "1" || key == "2" || key == "3" || key == "4" || key == "5" || key == "6" || key == "7" || key == "8" || key == "9")
 		{
@@ -1073,40 +917,12 @@ public:
 				{
 					renderer->RemoveActor(basePointsActor);
 					renderer->AddActor(baseActor);
-                    if (n)
-                    {
-                        int count = templateMatNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(templateMatNormals[i]);
-                        }
-                        count = templateMeshNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(templateMeshNormals[i]);
-                        }
-                    }
-                    else { }
 				}
 				else { }
 				if (b)
 				{
 					renderer->RemoveActor(dataPointsActor);
 					renderer->AddActor(dataActor);
-                    if (n)
-                    {
-                        int count = observedMatNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(observedMatNormals[currentMesh][i]);
-                        }
-                        count = observedMeshNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(observedMeshNormals[currentMesh][i]);
-                        }
-                    }
-                    else { }
 				}
 				else { }
 			}
@@ -1116,43 +932,27 @@ public:
 				{
 					renderer->RemoveActor(baseActor);
 					renderer->AddActor(basePointsActor);
-                    if (n)
-                    {
-                        int count = templateMeshNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(templateMeshNormals[i]);
-                        }
-                        count = templateMatNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(templateMatNormals[i]);
-                        }
-                    }
-                    else { }
 				}
 				else { }
 				if (b)
 				{
 					renderer->RemoveActor(dataActor);
 					renderer->AddActor(dataPointsActor);
-                    if (n)
-                    {
-                        int count = observedMeshNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(observedMeshNormals[currentMesh][i]);
-                        }
-                        count = observedMatNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(observedMatNormals[currentMesh][i]);
-                        }
-                    }
-                    else { }
 				}
 				else { }
-            }
+			}
+			/*if (displayingMesh)
+			{
+				baseMapper->SetInputData(templateMesh);
+				dataMapper->SetInputData(observedMeshes[currentMesh]);
+			}
+			else
+			{
+				baseMapper->SetInputData(templatePoints);
+				dataMapper->SetInputData(observedPointsVector[currentMesh]);
+			}
+			baseMapper->Modified();
+			dataMapper->Modified();*/
 			changed = true;
 		}
         else if (key == "s")
@@ -1163,8 +963,6 @@ public:
                 if (b) renderer->AddActor(observedAxes[currentMesh]);
                 if (g) renderer->AddActor(deformedAxes);
                 if (r) renderer->AddActor(templateAxes);
-                legend->SetEntryColor(axesText, white);
-                legend->Modified();
 				arrowsNeedUpdate = true;
             }
             else
@@ -1172,121 +970,6 @@ public:
                 if (b) renderer->RemoveActor(observedAxes[currentMesh]);
                 if (g) renderer->RemoveActor(deformedAxes);
                 if (r) renderer->RemoveActor(templateAxes);
-                legend->SetEntryColor(axesText, grey);
-                legend->Modified();
-            }
-            changed = true;
-        }
-        else if (key == "n")
-        {
-            n = !n;
-            if (n)
-            {
-                if (b)
-                {
-                    if (displayingMesh)
-                    {
-                        int count = observedMeshNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(observedMeshNormals[currentMesh][i]);
-                        }
-                    }
-                    else
-                    {
-                        int count = observedMatNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(observedMatNormals[currentMesh][i]);
-                        }
-                    }
-                }
-                else { }
-                if (g)
-                {
-                    int count = deformedMeshNormals.size();
-                    for (int i = 0; i < count; i++)
-                    {
-                        renderer->AddActor(deformedMeshNormals[i]);
-                    }
-                }
-                else { }
-                if (r)
-                {
-                    if (displayingMesh)
-                    {
-                        int count = templateMeshNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(templateMeshNormals[i]);
-                        }
-                    }
-                    else
-                    {
-                        int count = templateMatNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->AddActor(templateMatNormals[i]);
-                        }
-                    }
-                }
-                else { }
-                legend->SetEntryColor(normalsText, white);
-                legend->Modified();
-            }
-            else
-            {
-                if (b)
-                {
-                    if (displayingMesh)
-                    {
-                        int count = observedMeshNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(observedMeshNormals[currentMesh][i]);
-                        }
-                    }
-                    else
-                    {
-                        int count = observedMatNormals[currentMesh].size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(observedMatNormals[currentMesh][i]);
-                        }
-                    }
-                }
-                else { }
-                if (g)
-                {
-                    int count = deformedMeshNormals.size();
-                    for (int i = 0; i < count; i++)
-                    {
-                        renderer->RemoveActor(deformedMeshNormals[i]);
-                    }
-                }
-                else { }
-                if (r)
-                {
-                    if (displayingMesh)
-                    {
-                        int count = templateMeshNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(templateMeshNormals[i]);
-                        }
-                    }
-                    else
-                    {
-                        int count = templateMatNormals.size();
-                        for (int i = 0; i < count; i++)
-                        {
-                            renderer->RemoveActor(templateMatNormals[i]);
-                        }
-                    }
-                }
-                else { }
-                legend->SetEntryColor(normalsText, grey);
-                legend->Modified();
             }
             changed = true;
         }
@@ -1299,7 +982,7 @@ public:
                 _W = _X * _V;
                 _W = _W + _Wm;
                 _W = _W.t();
-                _W.reshape(7, _M);
+                _W.reshape(3, _M);
                 _W = _W.t();
             }
             else
@@ -1317,70 +1000,18 @@ public:
             }
 
 			_GW = _G * _W;
-
-            vtkSmartPointer<vtkFloatArray> templateMeshNormalsRetrieved =
-                vtkFloatArray::SafeDownCast(templateMesh->GetPointData()->GetNormals());
-            vtkSmartPointer<vtkFloatArray> deformedMeshNormalsRetrieved =
-                vtkSmartPointer<vtkFloatArray>::New();
-            deformedMeshNormalsRetrieved->SetNumberOfComponents(3);
-            deformedMeshNormalsRetrieved->SetNumberOfTuples(templateMeshNormalsRetrieved->GetNumberOfTuples());
-            arma::vec normal(3);
-            for (int i = 0; i < _GW.n_rows; i++)
+			for (int i = 0; i < _GW.n_rows; i++)
 			{
-                double dM[3];
-                double dMN[3];
+				double* dM = deformedMesh->GetPoint(i);
 				double* tM = templateMesh->GetPoint(i);
-                double tMN[3];
-                templateMeshNormalsRetrieved->GetTuple(i, tMN);
-
 				dM[0] = tM[0] + (interpolation * _GW(i, 0));
 				dM[1] = tM[1] + (interpolation * _GW(i, 1));
 				dM[2] = tM[2] + (interpolation * _GW(i, 2));
 				deformedMesh->GetPoints()->SetPoint(i, dM);
-
-                normal(0) = tMN[0];
-                normal(1) = tMN[1];
-                normal(2) = tMN[2];
-                Quaternion rot((interpolation * _GW(i, 3)), (interpolation * _GW(i, 4)),
-                               (interpolation * _GW(i, 5)), (interpolation * _GW(i, 6)));
-                arma::vec rotPoint = rot.transformPoint(normal);
-                dMN[0] = rotPoint(0);
-                dMN[1] = rotPoint(1);
-                dMN[2] = rotPoint(2);
-                deformedMeshNormalsRetrieved->SetTuple3(i, dMN[0], dMN[1], dMN[2]);
 			}
-            deformedMesh->GetPointData()->SetNormals(deformedMeshNormalsRetrieved);
 
-            double pN[3];
-            double nV[3];
-            double startPoint[3];
-            double endPoint[3];
-            int count = deformedMeshNormalsRetrieved->GetNumberOfTuples();
-            double jump = std::max(1.0, ((double)count)/normalCount);
-            int index = 0;
-            for (int i = 0; i < count; i += jump)
-            {
-                deformedMeshNormalsRetrieved->GetTuple(i, pN);
-                deformedMesh->GetPoint(i, startPoint);
-                endPoint[0] = startPoint[0] + pN[0];
-                endPoint[1] = startPoint[1] + pN[1];
-                endPoint[2] = startPoint[2] + pN[2];
-                transformArrow(deformedMeshNormalArrows[index], deformedMeshNormalArrowTransforms[index], startPoint, endPoint, nV, true);
-                deformedMeshNormals[index]->Modified();
-                index++;
-            }
-
-            arma::mat GaW = _Ga * _W;
-            vtkSmartPointer<vtkTransform> t =
-                    vtkSmartPointer<vtkTransform>::New();
-            t->Translate(templateAxesPosition[0] + (interpolation * GaW(0, 0)),
-                         templateAxesPosition[1] + (interpolation * GaW(0, 1)),
-                         templateAxesPosition[2] + (interpolation * GaW(0, 2)));
-            /// TODO
-            deformedAxes->SetUserTransform(t);
-
-			deformedMesh->Modified();
-            deformedAxes->Modified();
+            deformedMesh->Modified();
+            updateAxes();
 		}
 		else { }
 
@@ -1416,8 +1047,7 @@ void loadMesh(const char* fileName, vtkPolyData* mesh)
 void loadPoints(const char* fileName, vtkPolyData* points)
 {
 	printf("Loading " ANSI_COLOR_CYAN "obj" ANSI_COLOR_RESET " file " ANSI_COLOR_CYAN "%s" ANSI_COLOR_RESET "... ", fileName); fflush(stdout);
-    //vtkOBJReader* sceneReader = vtkOBJReader::New();
-    vtkPLYReader* sceneReader = vtkPLYReader::New();
+	vtkOBJReader* sceneReader = vtkOBJReader::New();
 	sceneReader->SetFileName(fileName);
 	sceneReader->Update();
 	points->ShallowCopy(sceneReader->GetOutput());
@@ -1439,6 +1069,7 @@ void loadAxes(const char* fileName, vtkAxesActor* axes, vtkSmartPointer<vtkTrans
 {
     std::ifstream stream;
     stream.open(fileName);
+
     char line[64];
     stream.getline(line, 64);
     double x = atof(line);
@@ -1446,12 +1077,28 @@ void loadAxes(const char* fileName, vtkAxesActor* axes, vtkSmartPointer<vtkTrans
     double y = atof(line);
     stream.getline(line, 64);
     double z = atof(line);
+
+    stream.getline(line, 64);
+    double i = atof(line);
+    stream.getline(line, 64);
+    double j = atof(line);
+    stream.getline(line, 64);
+    double k = atof(line);
+    stream.getline(line, 64);
+    double w = atof(line);
+    w = w / (2.0*M_PI) * 360.0;
+    double l = std::sqrt(i*i + j*j + k*k);
+    i /= l;
+    j /= l;
+    k /= l;
+
     vtkSmartPointer<vtkTransform> transform =
         vtkSmartPointer<vtkTransform>::New();
+    transform->PostMultiply();
+    transform->RotateWXYZ(w, i, j, k);
     transform->Translate(x, y, z);
     axes->SetUserTransform(transform);
     axes->AxisLabelsOff();
-    axes->SetPosition(x, y, 10);
     axes->SetTotalLength(axesScale, axesScale, axesScale);
     axes->SetShaftTypeToCylinder();
     if (t != 0) t = transform;
@@ -1507,7 +1154,7 @@ void printResults(arma::mat& W, std::string filename)
 void addLabels()
 {
 	legend = vtkSmartPointer<vtkLegendBoxActor>::New();
-    legend->SetNumberOfEntries(19);
+    legend->SetNumberOfEntries(17);
 
 	vtkSmartPointer<vtkCubeSource> legendBox =
 			vtkSmartPointer<vtkCubeSource>::New();
@@ -1534,8 +1181,7 @@ void addLabels()
 	legend->SetEntry(14, legendBox->GetOutput(), "l - Model: Non-Linear", white);
 	legend->SetEntry(15, legendBox->GetOutput(), "x - X: Mean", white);
 	legend->SetEntry(16, legendBox->GetOutput(), "p - Switch: Mesh <-> Points", white);
-    legend->SetEntry(17, legendBox->GetOutput(), "s - Axes", grey);
-    legend->SetEntry(18, legendBox->GetOutput(), "n - Normals", grey);
+    legend->SetEntry(17, legendBox->GetOutput(), "s - Axes", white);
 
 	legend->GetPositionCoordinate()->SetCoordinateSystemToView();
 	legend->GetPosition2Coordinate()->SetCoordinateSystemToView();
@@ -1584,7 +1230,8 @@ void addMeshes()
 			vtkSmartPointer<vtkPolyDataMapper>::New();
 	basePointsMapper->SetInputData(templatePoints);
 
-    dataPointsMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+	vtkSmartPointer<vtkPolyDataMapper> dataPointsMapper =
+			vtkSmartPointer<vtkPolyDataMapper>::New();
 	dataPointsMapper->SetInputData(observedPointsVector[currentMesh]);
 
 	basePointsActor = vtkSmartPointer<vtkActor>::New();
@@ -1627,7 +1274,7 @@ void addField()
     //  Create the vector field
     const float start = -1.0;
     const float step = 2.0/(R-1.0);
-    arma::mat Z(R * R * R, 7);
+	arma::mat Z(R * R * R, 3);
 	int index = 0;
 	for (int i = 0; i < R; i++)
 	{
@@ -1638,10 +1285,6 @@ void addField()
 				Z(index, 0) = i * step + start;
 				Z(index, 1) = j * step + start;
 				Z(index, 2) = k * step + start;
-                Z(index, 3) = 0.0;
-                Z(index, 4) = 0.0;
-                Z(index, 5) = 1.0;
-                Z(index, 6) = 1.0;
 				index++;
 			}
 		}
@@ -1660,12 +1303,7 @@ void addField()
 		endPoint[1] = startPoint[1] + GZ(i, 1);
 		endPoint[2] = startPoint[2] + GZ(i, 2);
 
-        vtkSmartPointer<vtkArrowSource> arrowSource;
-        vtkSmartPointer<vtkMapper> mapper;
-        vtkSmartPointer<vtkTransformPolyDataFilter> transformPD;
-        vtkSmartPointer<vtkActor> actor = makeArrow(startPoint, endPoint, arrowSource, mapper, transformPD, true, true);
-        fieldArrowsTransforms.push_back(transformPD);
-        fieldArrowsSource.push_back(arrowSource);
+		vtkSmartPointer<vtkActor> actor = makeArrow(startPoint, endPoint, true);
 		fieldArrows.push_back(actor);
 
         // Add the actor to the scene
@@ -1680,7 +1318,7 @@ void displayResults()
         _W = _X * _V;
         _W = _W + _Wm;
         _W = _W.t();
-        _W.reshape(7, _M);
+        _W.reshape(3, _M);
         _W = _W.t();
     }
     else
@@ -1695,41 +1333,25 @@ void displayResults()
                 index++;
             }
         }
-    }
+	}
 
 	// Create the model transformation
 	int q = templateMesh->GetNumberOfPoints();
-    vtkSmartPointer<vtkFloatArray> templateMeshNormalsRetrieved =
-        vtkFloatArray::SafeDownCast(templateMesh->GetPointData()->GetNormals());
-    _Tm.set_size(q, 7);
+    _Tm.set_size(q, 3);
 	for (int i = 0; i < q; i++)
 	{
 		double* point = templateMesh->GetPoint(i);
         _Tm(i, 0) = point[0];
         _Tm(i, 1) = point[1];
         _Tm(i, 2) = point[2];
-        double tMN[3];
-        templateMeshNormalsRetrieved->GetTuple(i, tMN);
-        arma::vec normal(3);
-        normal(0) = tMN[0];
-        normal(1) = tMN[1];
-        normal(2) = tMN[2];
-        Quaternion normalQuat(base, normal);
-        _Tm(i, 3) = normalQuat.getX();
-        _Tm(i, 4) = normalQuat.getY();
-        _Tm(i, 5) = normalQuat.getZ();
-        _Tm(i, 6) = normalQuat.getW();
 	}
     _G = ComputeG(_T, _Tm);
 	_GW = _G * _W;
 
-    arma::mat axes(1, 7);
+    arma::mat axes(1, 3);
     axes(0, 0) = templateAxesPosition[0];
     axes(0, 1) = templateAxesPosition[1];
     axes(0, 2) = templateAxesPosition[2];
-    axes(0, 3) = 0.0;
-    axes(0, 4) = 0.0;
-    axes(0, 5) = 0.0;
     _Ga = ComputeG(_T, axes);
 
 	double startPoint[3];
@@ -1746,13 +1368,8 @@ void displayResults()
 		endPoint[1] = startPoint[1] + _GW((int)i, 1);
 		endPoint[2] = startPoint[2] + _GW((int)i, 2);
 
-        vtkSmartPointer<vtkArrowSource> arrowSource;
-        vtkSmartPointer<vtkMapper> mapper;
-        vtkSmartPointer<vtkTransformPolyDataFilter> transformPD;
-        vtkSmartPointer<vtkActor> actor = makeArrow(startPoint, endPoint, arrowSource, mapper, transformPD);
-        transformArrowsTransforms.push_back(transformPD);
-        transformArrowsSource.push_back(arrowSource);
-        transformArrows.push_back(actor);
+		vtkSmartPointer<vtkActor> actor = makeArrow(startPoint, endPoint);
+		transformArrows.push_back(actor);
 
         // Add the actor to the scene
 		if (a) renderer->AddActor(actor);
@@ -1764,106 +1381,43 @@ void displayResults()
 
 	addLabels();
 
-    // Do this so the modified mesh is visible in the first frame
-    vtkSmartPointer<vtkFloatArray> deformedMeshNormalsRetrieved =
-        vtkSmartPointer<vtkFloatArray>::New();
-    deformedMeshNormalsRetrieved->SetNumberOfComponents(3);
-    deformedMeshNormalsRetrieved->SetNumberOfTuples(templateMeshNormalsRetrieved->GetNumberOfTuples());
-    arma::vec normal(3);
-    for (int i = 0; i < _GW.n_rows; i++)
-    {
-        double dM[3];
-        double dMN[3];
-        double* tM = templateMesh->GetPoint(i);
-        double tMN[3];
-        templateMeshNormalsRetrieved->GetTuple(i, tMN);
-
-        dM[0] = tM[0] + (interpolation * _GW(i, 0));
-        dM[1] = tM[1] + (interpolation * _GW(i, 1));
-        dM[2] = tM[2] + (interpolation * _GW(i, 2));
-        deformedMesh->GetPoints()->SetPoint(i, dM);
-
-        normal(0) = tMN[0];
-        normal(1) = tMN[1];
-        normal(2) = tMN[2];
-        Quaternion rot((interpolation * _GW(i, 3)), (interpolation * _GW(i, 4)),
-                       (interpolation * _GW(i, 5)), (interpolation * _GW(i, 6)));
-        arma::vec rotPoint = rot.transformPoint(normal);
-        dMN[0] = rotPoint(0);
-        dMN[1] = rotPoint(1);
-        dMN[2] = rotPoint(2);
-        deformedMeshNormalsRetrieved->SetTuple3(i, dMN[0], dMN[1], dMN[2]);
-    }
-    deformedMesh->GetPointData()->SetNormals(deformedMeshNormalsRetrieved);
-
-    double pN[3];
-    double nV[3];
-    startPoint[3];
-    endPoint[3];
-    count = deformedMeshNormalsRetrieved->GetNumberOfTuples();
-    jump = std::max(1.0, ((double)count)/normalCount);
-    int index = 0;
-    for (int i = 0; i < count; i += jump)
-    {
-        deformedMeshNormalsRetrieved->GetTuple(i, pN);
-        deformedMesh->GetPoint(i, startPoint);
-        endPoint[0] = startPoint[0] + pN[0];
-        endPoint[1] = startPoint[1] + pN[1];
-        endPoint[2] = startPoint[2] + pN[2];
-        transformArrow(deformedMeshNormalArrows[index], deformedMeshNormalArrowTransforms[index], startPoint, endPoint, nV, true);
-        deformedMeshNormals[index]->Modified();
-        index++;
+	// Do this so the modified mesh is visible in the first frame
+	for (int i = 0; i < _GW.n_rows; i++)
+	{
+		double* dM = deformedMesh->GetPoint(i);
+		double* tM = templateMesh->GetPoint(i);
+		dM[0] = tM[0] + (interpolation * _GW(i, 0));
+		dM[1] = tM[1] + (interpolation * _GW(i, 1));
+		dM[2] = tM[2] + (interpolation * _GW(i, 2));
+		deformedMesh->GetPoints()->SetPoint(i, dM);
     }
 
-    arma::mat GaW = _Ga * _W;
-    vtkSmartPointer<vtkTransform> t =
-            vtkSmartPointer<vtkTransform>::New();
-    t->Translate(templateAxesPosition[0] + (interpolation * GaW(0, 0)),
-                 templateAxesPosition[1] + (interpolation * GaW(0, 1)),
-                 templateAxesPosition[2] + (interpolation * GaW(0, 2)));
-    deformedAxes->SetUserTransform(t); /// TODO
-
-    deformedAxes->Modified();
 	deformedMesh->Modified();
+    updateAxes();
 
     // Render and interact
 	renderWindow->Render();
 	renderWindowInteractor->Start();
 }
 
-void normalize(vtkSmartPointer<vtkPolyData>& loadedPoints, arma::mat& matrix,
+void normalize(vtkSmartPointer<vtkPolyData> loadedPoints, arma::mat& matrix,
                vtkSmartPointer<vtkPolyData> loadedMesh = 0, vtkSmartPointer<vtkAxesActor> axes = 0,
                double* position = 0)
 {
 	// Center and resize the template
 	int n = loadedPoints->GetNumberOfPoints();
-    matrix.set_size(n, 7);
+	matrix.set_size(n, 3);
 
 	double minX, minY, minZ;
 	minX = minY = minZ = INT_MAX;
 	double maxX, maxY, maxZ;
 	maxX = maxY = maxZ = INT_MIN;
 
-    double pN[3];
-    vtkSmartPointer<vtkFloatArray> normalsRetrieved =
-        vtkFloatArray::SafeDownCast(loadedMesh->GetPointData()->GetNormals());
-
 	for (int i = 0; i < n; i++)
 	{
-        normalsRetrieved->GetTuple(i, pN);
-
 		matrix(i, 0) = loadedPoints->GetPoint(i)[0];
 		matrix(i, 1) = loadedPoints->GetPoint(i)[1];
 		matrix(i, 2) = loadedPoints->GetPoint(i)[2];
-        arma::vec normal(3);
-        normal(0) = pN[0];
-        normal(1) = pN[1];
-        normal(2) = pN[2];
-        Quaternion normalQuat(base, normal);
-        matrix(i, 3) = normalQuat.getX();
-        matrix(i, 4) = normalQuat.getY();
-        matrix(i, 5) = normalQuat.getZ();
-        matrix(i, 6) = normalQuat.getW();
 
 		minX = std::min(minX, matrix(i, 0));
 		minY = std::min(minY, matrix(i, 1));
@@ -1904,6 +1458,7 @@ void normalize(vtkSmartPointer<vtkPolyData>& loadedPoints, arma::mat& matrix,
         vtkSmartPointer<vtkTransform> fullTransform =
                 vtkSmartPointer<vtkTransform>::New();
         vtkSmartPointer<vtkLinearTransform> transform = axes->GetUserTransform();
+        fullTransform->PostMultiply();
         fullTransform->Concatenate(transform);
         fullTransform->Translate(-medX, -medY, -medZ);
         axes->SetUserTransform(fullTransform);
@@ -1941,32 +1496,21 @@ int main()
 	vtkSmartPointer<vtkPolyData> observedPoints;
 	vtkSmartPointer<vtkPolyData> observedMesh;
 
-    base.set_size(3);
-    base(0) = 0.0;
-    base(1) = 0.0;
-    base(2) = 1.0;
-
-    int count;
-    double pN[3];
-    double startPoint[3];
-    double endPoint[3];
-    double jump;
-
 	printf("\n");
 
 	// Template
     printf("Loading " ANSI_COLOR_RED "template" ANSI_COLOR_RESET "...\n");
 	char tempMesh[17];
-    std::sprintf(tempMesh, "../data/mug%02d.ply", templateNum);
+	std::sprintf(tempMesh, "../data/mug%02d.ply", templateNum);
 	loadMesh(tempMesh, templateMesh);
-    char temp[18];
+	char temp[19];
 	if (dense)
 	{
-        std::sprintf(temp, "../data/mug%02dN.ply", templateNum);
+		std::sprintf(temp, "../data/mug%02d_d.obj", templateNum);
 	}
 	else
 	{
-        std::sprintf(temp, "../data/mug%02dN.ply", templateNum);
+		std::sprintf(temp, "../data/mug%02d_r.obj", templateNum);
 	}
 	loadPoints(temp, templatePoints);
 
@@ -1994,14 +1538,14 @@ int main()
 	{
 		if (i != templateNum)
 		{
-            char obs[18];
+			char obs[19];
 			if (dense)
 			{
-                std::sprintf(obs, "../data/mug%02dN.ply", i);
+				std::sprintf(obs, "../data/mug%02d_d.obj", i);
 			}
 			else
 			{
-                std::sprintf(obs, "../data/mug%02dN.ply", i);
+				std::sprintf(obs, "../data/mug%02d_r.obj", i);
 			}
 			observedPoints = vtkSmartPointer<vtkPolyData>::New();
 			loadPoints(obs, observedPoints);
@@ -2034,55 +1578,31 @@ int main()
     normalize(templatePoints, templateMatrix, templateMesh, templateAxes, templateAxesPosition);
 	deformedMesh->DeepCopy(templateMesh);
     deformedAxes->SetUserTransform(templateAxes->GetUserTransform());
+    templateAxesTransform = vtkSmartPointer<vtkTransform>::New();
+    templateAxesTransform->Concatenate(templateAxes->GetUserTransform());
 	int m = templateMatrix.n_rows;
 
-    vtkSmartPointer<vtkFloatArray> templateMeshNormalsRetrieved =
-        vtkFloatArray::SafeDownCast(templateMesh->GetPointData()->GetNormals());
-    count = templateMeshNormalsRetrieved->GetNumberOfTuples();
-    jump = std::max(1.0, ((double)count)/normalCount);
-    for (int i = 0; i < count; i += jump)
-    {
-        templateMeshNormalsRetrieved->GetTuple(i, pN);
-        templateMesh->GetPoint(i, startPoint);
-        endPoint[0] = startPoint[0] + pN[0];
-        endPoint[1] = startPoint[1] + pN[1];
-        endPoint[2] = startPoint[2] + pN[2];
-        vtkSmartPointer<vtkArrowSource> arrowSource;
-        vtkSmartPointer<vtkMapper> mapper;
-        vtkSmartPointer<vtkTransformPolyDataFilter> transformPD;
-        vtkSmartPointer<vtkActor> actor = makeArrow(startPoint, endPoint, arrowSource, mapper, transformPD, true);
-        colorNormalArrow(arrowSource, mapper, 1.0, 0.0, 0.0);
-        templateMeshNormalArrows.push_back(arrowSource);
-        templateMeshNormals.push_back(actor);
+    vtkSmartPointer<vtkPoints> templateAxesPointArray =
+            vtkSmartPointer<vtkPoints>::New();
+    templateAxesPointArray->InsertNextPoint(0.0+templateAxesPosition[0], 0.0+templateAxesPosition[1], 0.0+templateAxesPosition[2]);
+    templateAxesPointArray->InsertNextPoint(0.1+templateAxesPosition[0], 0.0+templateAxesPosition[1], 0.0+templateAxesPosition[2]);
+    templateAxesPointArray->InsertNextPoint(0.0+templateAxesPosition[0], 0.1+templateAxesPosition[1], 0.0+templateAxesPosition[2]);
+    templateAxesPointArray->InsertNextPoint(0.0+templateAxesPosition[0], 0.0+templateAxesPosition[1], 0.1+templateAxesPosition[2]);
 
-        actor = makeArrow(startPoint, endPoint, arrowSource, mapper, transformPD, true);
-        colorNormalArrow(arrowSource, mapper, 0.0, 1.0, 0.0);
-        deformedMeshNormalArrows.push_back(arrowSource);
-        deformedMeshNormalArrowTransforms.push_back(transformPD);
-        deformedMeshNormals.push_back(actor);
+    templateAxesTransform->TransformPoints(templateAxesPointArray, templateAxesPointArray);
+
+    int pointCount = templateAxesPointArray->GetNumberOfPoints();
+    templateAxesPoints = arma::mat(pointCount, 3);
+    for (int i = 0; i < pointCount; i++)
+    {
+        double point[3];
+        templateAxesPointArray->GetPoint(i, point);
+        templateAxesPoints(i, 0) = point[0];
+        templateAxesPoints(i, 1) = point[1];
+        templateAxesPoints(i, 2) = point[2];
     }
 
-    vtkSmartPointer<vtkFloatArray> templateMatNormalsRetrieved =
-        vtkFloatArray::SafeDownCast(templatePoints->GetPointData()->GetNormals());
-    count = templateMatNormalsRetrieved->GetNumberOfTuples();
-    jump = std::max(1.0, ((double)count)/normalCount);
-    for (int i = 0; i < count; i += jump)
-    {
-        templateMatNormalsRetrieved->GetTuple(i, pN);
-        templatePoints->GetPoint(i, startPoint);
-        endPoint[0] = startPoint[0] + pN[0];
-        endPoint[1] = startPoint[1] + pN[1];
-        endPoint[2] = startPoint[2] + pN[2];
-        vtkSmartPointer<vtkArrowSource> arrowSource;
-        vtkSmartPointer<vtkMapper> mapper;
-        vtkSmartPointer<vtkTransformPolyDataFilter> transformPD;
-        vtkSmartPointer<vtkActor> actor = makeArrow(startPoint, endPoint, arrowSource, mapper, transformPD, true);
-        colorNormalArrow(arrowSource, mapper, 1.0, 0.0, 0.0);
-        templateMatNormalArrows.push_back(arrowSource);
-        templateMatNormals.push_back(actor);
-    }
-
-    _W.set_size(meshCount, 7*m);
+	_W.set_size(meshCount, 3*m);
     std::vector<arma::mat> Ws;
 	int printNum = startNum;
 	for (int i = 0; i < meshCount; i++)
@@ -2091,69 +1611,19 @@ int main()
         normalize(observedPointsVector[i], observedMatrix, observedMeshes[i], observedAxes[i]);
 		int n = observedMatrix.n_rows;
 
-        std::vector<vtkSmartPointer< vtkArrowSource > > observedMeshNormalArrowsI;
-        std::vector<vtkSmartPointer< vtkActor > > observedMeshNormalsI;
-        vtkSmartPointer<vtkFloatArray> observedMeshNormalsRetrieved =
-            vtkFloatArray::SafeDownCast(observedMeshes[i]->GetPointData()->GetNormals());
-        count = observedMeshNormalsRetrieved->GetNumberOfTuples();
-        jump = std::max(1.0, ((double)count)/normalCount);
-        for (int j = 0; j < count; j += jump)
-        {
-            observedMeshNormalsRetrieved->GetTuple(j, pN);
-            observedMeshes[i]->GetPoint(j, startPoint);
-            endPoint[0] = startPoint[0] + pN[0];
-            endPoint[1] = startPoint[1] + pN[1];
-            endPoint[2] = startPoint[2] + pN[2];
-            vtkSmartPointer<vtkArrowSource> arrowSource;
-            vtkSmartPointer<vtkMapper> mapper;
-            vtkSmartPointer<vtkTransformPolyDataFilter> transformPD;
-            vtkSmartPointer<vtkActor> actor = makeArrow(startPoint, endPoint, arrowSource, mapper, transformPD, true);
-            colorNormalArrow(arrowSource, mapper, 0.0, 0.0, 1.0);
-            actor->Modified();
-            observedMeshNormalArrowsI.push_back(arrowSource);
-            observedMeshNormalsI.push_back(actor);
-        }
-        observedMeshNormalArrows.push_back(observedMeshNormalArrowsI);
-        observedMeshNormals.push_back(observedMeshNormalsI);
-
-        std::vector<vtkSmartPointer< vtkArrowSource > > observedMatNormalArrowsI;
-        std::vector<vtkSmartPointer< vtkActor > > observedMatNormalsI;
-        vtkSmartPointer<vtkFloatArray> observedMatNormalsRetrieved =
-            vtkFloatArray::SafeDownCast(observedPointsVector[i]->GetPointData()->GetNormals());
-        count = observedMatNormalsRetrieved->GetNumberOfTuples();
-        jump = std::max(1.0, ((double)count)/normalCount);
-        for (int j = 0; j < count; j += jump)
-        {
-            observedMatNormalsRetrieved->GetTuple(j, pN);
-            observedPointsVector[i]->GetPoint(j, startPoint);
-            endPoint[0] = startPoint[0] + pN[0];
-            endPoint[1] = startPoint[1] + pN[1];
-            endPoint[2] = startPoint[2] + pN[2];
-            vtkSmartPointer<vtkArrowSource> arrowSource;
-            vtkSmartPointer<vtkMapper> mapper;
-            vtkSmartPointer<vtkTransformPolyDataFilter> transformPD;
-            vtkSmartPointer<vtkActor> actor = makeArrow(startPoint, endPoint, arrowSource, mapper, transformPD, true);
-            colorNormalArrow(arrowSource, mapper, 0.0, 0.0, 1.0);
-            observedMatNormalArrowsI.push_back(arrowSource);
-            observedMatNormalsI.push_back(actor);
-        }
-        observedMatNormalArrows.push_back(observedMatNormalArrowsI);
-        observedMatNormals.push_back(observedMatNormalsI);
-
         printf("" ANSI_COLOR_MAGENTA "Matching" ANSI_COLOR_RED " template point set (%d points) " ANSI_COLOR_MAGENTA "with"
                ANSI_COLOR_BLUE " observed point set #%d (%d points)" ANSI_COLOR_MAGENTA "..." ANSI_COLOR_RESET "\n",
                m, (i+1), n); fflush(stdout);
 
 		cpd::Nonrigid nonrigid(0.000001, 150, 0.1, false, 1.0, 1.0, 1.0);
 
-        //cpd::Registration::ResultPtr result = nonrigid.run(observedMatrixScaled, templateMatrixScaled);
         cpd::Registration::ResultPtr result = nonrigid.run(observedMatrix, templateMatrix);
 
-        // W = m x 7
+		// W = m x 3
 		int index = 0;
 		for (int r = 0; r < m; r++)
 		{
-            for (int c = 0; c < 7; c++)
+			for (int c = 0; c < 3; c++)
 			{
 				_W(i, index) = result->W(r, c);
 				index++;
@@ -2208,7 +1678,7 @@ int main()
 	{
 		arma::mat Y = Ws[i];
 		Y = Y.t();
-        Y.reshape(7*m, 1);
+		Y.reshape(3*m, 1);
 		Y = Y.t();
 		Y = Y - _Wm;
 
@@ -2259,6 +1729,7 @@ int main()
     google::InitGoogleLogging("cpd_vtk");
     Compound_Kernel::Ptr kernel = Compound_Kernel::New();
     kernel->addKernel(RBF_Kernel::New());
+    //kernel->addKernel(Linear_Kernel::New());
     gplvm = GPLVM::New(Wc, numParams, kernel);
     gplvm->learn();
 
@@ -2276,7 +1747,7 @@ int main()
         _XsNL.push_back(neXt);
 	}
 
-    _W.resize(_M, 7);
+	_W.resize(_M, 3);
 
 	displayResults();
 

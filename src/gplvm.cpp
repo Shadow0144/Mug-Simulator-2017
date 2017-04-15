@@ -2,7 +2,7 @@
 
 /// LatentCostFunctor
 
-GPLVMCostFunctor::GPLVMCostFunctor(arma::mat& Y, int q, Kernel::Ptr kernel)
+GPLVMCostFunctor::GPLVMCostFunctor(arma::mat Y, int q, Kernel::Ptr kernel)
 {
     _Y = Y;
     _n = Y.n_rows;
@@ -36,12 +36,12 @@ bool GPLVMCostFunctor::Evaluate(const double* parameters, double* cost, double* 
         arma::mat dK = (alpha * alpha.t() - _p*invK);
 
         // Gradient w.r.t. kernel parameters
-        int XStart = _kernel->numParams();
-        for (int i = 0; i < XStart; i++)
+        arma::mat kp = _kernel->gradientP(X);
+        arma::mat gK = dK * kp;
+        int start = _kernel->numParams();
+        for (int i = 0; i < start; i++)
         {
-            arma::mat kp = _kernel->gradientP(X, i);
-            arma::mat gK = dK * kp;
-            gradient[i] = arma::accu(gK);
+            gradient[i] = gK(i, 0);
         }
 
         // Gradient w.r.t. X
@@ -51,7 +51,8 @@ bool GPLVMCostFunctor::Evaluate(const double* parameters, double* cost, double* 
             {
                 arma::mat kg = _kernel->gradientX(X, i, j);
                 arma::mat gX = dK * kg;
-                gradient[XStart + j*_n + i] = arma::accu(gX);
+                double g = arma::accu(gX);
+                gradient[start + j*_n + i] = g;
             }
         }
     }
@@ -69,7 +70,7 @@ int GPLVMCostFunctor::NumParameters() const
 ///
 /// GPLVM
 
-GPLVM::GPLVM(arma::mat& Y, int q, Kernel::Ptr kernel)
+GPLVM::GPLVM(arma::mat Y, int q, Kernel::Ptr kernel)
 {
     _n = Y.n_rows;
     _p = Y.n_cols;
@@ -98,71 +99,29 @@ GPLVM::~GPLVM()
 
 }
 
-GPLVM::Ptr GPLVM::New(arma::mat& Y, int q, Kernel::Ptr kernel)
+GPLVM::Ptr GPLVM::New(arma::mat Y, int q, Kernel::Ptr kernel)
 {
     GPLVM::Ptr gplvm;
     gplvm.reset(new GPLVM(Y, q, kernel));
     return gplvm;
 }
 
-Kernel::Ptr GPLVM::getKernel() const
+Kernel::Ptr GPLVM::getKernel()
 {
     return _kernel;
 }
 
-arma::mat GPLVM::getX() const
+arma::mat GPLVM::getX()
 {
     return _X;
 }
 
-arma::mat GPLVM::getY() const
+arma::mat GPLVM::getY()
 {
     return _Y;
 }
 
-void GPLVM::setKernel(const Kernel::Ptr& kernel)
-{
-    _kernel = kernel;
-}
-
-void GPLVM::setX(const arma::mat& X)
-{
-    _n = X.n_rows;
-    _q = X.n_cols;
-    _X = X;
-
-    arma::mat K = (*_kernel)(_X, _X);
-    _L = arma::chol(K); /// Plus noise?
-    _LY = arma::solve(_L, _Y);
-}
-
-void GPLVM::setY(const arma::mat& Y)
-{
-    _n = Y.n_rows;
-    _p = Y.n_cols;
-    _Y = Y;
-
-    arma::mat K = (*_kernel)(_X, _X);
-    _L = arma::chol(K); /// Plus noise?
-    _LY = arma::solve(_L, _Y);
-}
-
-int GPLVM::getN() const
-{
-    return _n;
-}
-
-int GPLVM::getP() const
-{
-    return _p;
-}
-
-int GPLVM::getQ() const
-{
-    return _q;
-}
-
-arma::mat GPLVM::predict(const arma::mat& XStar) const
+arma::mat GPLVM::predict(arma::mat XStar)
 {
     arma::mat KStar = (*_kernel)(_X, XStar);
     arma::mat LStar = arma::solve(_L, KStar);
@@ -171,23 +130,8 @@ arma::mat GPLVM::predict(const arma::mat& XStar) const
     return YStar;
 }
 
-double GPLVM::getLogProbability(const arma::mat& XStar) const
-{
-    arma::mat Lk = arma::solve(_L, (*_kernel)(_X, XStar));
-    arma::mat KStar = (*_kernel)(XStar, XStar);
-    arma::mat KSum = arma::sum(arma::pow(Lk, 2), 1);
-    double s2 = KStar(0, 0) - KSum(0, 0);
-    return std::log(std::sqrt(s2));
-}
-
 void GPLVM::learn()
 {
-    learn(_X);
-}
-
-void GPLVM::learn(const arma::mat &X)
-{
-    _X = X;
     arma::mat C = princomp(_Y);
     C = C.head_rows(_q);
     _X = _Y * C.t();
@@ -211,7 +155,7 @@ void GPLVM::learn(const arma::mat &X)
     ceres::GradientProblemSolver::Options options;
     options.max_num_iterations = 25;
     options.line_search_direction_type = ceres::NONLINEAR_CONJUGATE_GRADIENT;
-    options.minimizer_progress_to_stdout = true;
+    //options.minimizer_progress_to_stdout = true;
 
     ceres::GradientProblemSolver::Summary summary;
     ceres::Solve(options, problem, parameters, &summary);
@@ -228,7 +172,7 @@ void GPLVM::learn(const arma::mat &X)
     }
 
     arma::mat K = (*_kernel)(_X, _X);
-    _L = arma::chol(K/* + (arma::eye(_n, _n)*_beta)*/); /// Plus noise?
+    _L = arma::chol(K); /// Plus noise?
     _LY = arma::solve(_L, _Y);
 }
 
