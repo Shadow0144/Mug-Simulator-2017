@@ -494,9 +494,9 @@ void updateAxes()
     for (int i = 0; i < (deformedAxesPoints.n_rows-1); i++)
     {
         arma::mat w(3, 1); // Base
-        w(0, 0) = templateAxesPoints(i%3+1, 0)-templateAxesPoints(0, 0);
-        w(1, 0) = templateAxesPoints(i%3+1, 1)-templateAxesPoints(0, 1);
-        w(2, 0) = templateAxesPoints(i%3+1, 2)-templateAxesPoints(0, 2);
+        w(0, 0) = templateAxesPoints(i+1, 0)-templateAxesPoints(0, 0);
+        w(1, 0) = templateAxesPoints(i+1, 1)-templateAxesPoints(0, 1);
+        w(2, 0) = templateAxesPoints(i+1, 2)-templateAxesPoints(0, 2);
         w = arma::normalise(w, 2, 0);
         arma::mat v(1, 3); // Deformed
         v(0, 0) = deformedAxesPoints(i+1, 0)-deformedAxesPoints(0, 0);
