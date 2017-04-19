@@ -191,7 +191,7 @@ bool g = true;
 bool b = false;
 bool a = false;
 bool v = true;
-bool s = false;
+bool s = true;
 
 bool linear = false;
 bool displayingMesh = true;
