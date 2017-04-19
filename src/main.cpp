@@ -150,6 +150,7 @@ const int modelValueText = 13;
 const int modelTypeText = 14;
 const int XSetText = 15;
 //const int pointSetText = 16;
+const int axesText = 17;
 
 arma::mat _T; // Template
 arma::mat _Tm; // Template mesh
@@ -963,6 +964,8 @@ public:
                 if (b) renderer->AddActor(observedAxes[currentMesh]);
                 if (g) renderer->AddActor(deformedAxes);
                 if (r) renderer->AddActor(templateAxes);
+                legend->SetEntryColor(axesText, white);
+                legend->Modified();
 				arrowsNeedUpdate = true;
             }
             else
@@ -970,6 +973,8 @@ public:
                 if (b) renderer->RemoveActor(observedAxes[currentMesh]);
                 if (g) renderer->RemoveActor(deformedAxes);
                 if (r) renderer->RemoveActor(templateAxes);
+                legend->SetEntryColor(axesText, grey);
+                legend->Modified();
             }
             changed = true;
         }
@@ -1154,7 +1159,7 @@ void printResults(arma::mat& W, std::string filename)
 void addLabels()
 {
 	legend = vtkSmartPointer<vtkLegendBoxActor>::New();
-    legend->SetNumberOfEntries(17);
+    legend->SetNumberOfEntries(18);
 
 	vtkSmartPointer<vtkCubeSource> legendBox =
 			vtkSmartPointer<vtkCubeSource>::New();
